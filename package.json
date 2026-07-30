@@ -1,0 +1,50 @@
+{
+  "name": "chengdu-mahjong-queyimen",
+  "productName": "成都麻将 缺一门计分",
+  "version": "1.0.0",
+  "description": "成都麻将·缺一门计分 - 帮助麻友快速算分、记账",
+  "author": "总在跑步的蜗牛",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "build:exe": "electron-builder --win --x64",
+    "build:icons": "node scripts/convert-icons.js"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.youxunchen.mahjong.queyimen",
+    "productName": "成都麻将缺一门计分",
+    "directories": {
+      "buildResources": "build-resources",
+      "output": "dist-exe"
+    },
+    "files": [
+      "electron/**/*",
+      "chengdu-mahjong.html",
+      "作者赞赏码.png",
+      "build-resources/icon.png"
+    ],
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ],
+      "icon": "build-resources/icons/icon-256.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "成都麻将·缺一门计分"
+    },
+    "portable": {
+      "artifactName": "成都麻将缺一门计分-便携版-v1.0.0.exe"
+    }
+  }
+}

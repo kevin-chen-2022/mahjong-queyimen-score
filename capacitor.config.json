@@ -1,0 +1,9 @@
+{
+  "appId": "com.youxunchen.mahjong.queyimen",
+  "webDir": "www",
+  "appName": "成都麻将缺一门计分",
+  "server": {
+    "androidScheme": "https"
+  },
+  "bundledWebRuntime": false
+}

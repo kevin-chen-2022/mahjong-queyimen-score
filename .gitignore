@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist-*/
+apk-build/
+www/index.html
+
+# Android build artifacts
+android/app/build/
+android/.gradle/
+android/local.properties
+
+# Tauri build artifacts
+src-tauri/target/
+src-tauri/gen/
+
+# Electron build artifacts
+dist-electron/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary files
+appreciation-base64.txt
+*.tmp
+*.temp
+
+# Lock files (keep package-lock.json for reproducibility)
+# package-lock.json

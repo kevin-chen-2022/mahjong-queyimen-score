@@ -1,0 +1,8 @@
+﻿<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">成都麻将·缺一门计分</string>
+    <string name="title_activity_main">成都麻将·缺一门计分</string>
+    <string name="package_name">com.youxunchen.mahjong.queyimen</string>
+    <string name="custom_url_scheme">com.youxunchen.mahjong.queyimen</string>
+</resources>
+
