@@ -884,6 +884,7 @@ const defaultState = {
       { key: 'gangshangpao', name: '杠上炮', value: 1 },
       { key: 'qiangganghu', name: '抢杠胡', value: 1 },
       { key: 'jinjudiao', name: '金钩钓', value: 1 },
+      { key: 'jingoupao', name: '金钩炮', value: 1 },
       { key: 'haidilao', name: '海底捞', value: 1 },
       { key: 'suangen', name: '算分根', value: 1 },
     ],
@@ -981,10 +982,11 @@ function calcHuScorePerLoser(player) {
   
   if (player.winType === '自摸') {
     total += getMultiplier('zimo');
+    if (player.zimoType === '金钩钓') total += getMultiplier('jinjudiao');
     if (player.zimoType === '海底捞') total += getMultiplier('haidilao');
     if (player.zimoType === '杠上花') total += getMultiplier('gangshanghua');
   } else {
-    if (player.dianpaoType === '金钩钓') total += getMultiplier('jinjudiao');
+    if (player.dianpaoType === '金钩炮') total += getMultiplier('jingoupao');
     if (player.dianpaoType === '杠上炮') total += getMultiplier('gangshangpao');
     if (player.dianpaoType === '抢杠胡') total += getMultiplier('qiangganghu');
   }
@@ -1120,12 +1122,13 @@ function calcPlayerDetails(playerId) {
     if (tx.winType === '自摸') {
       const zimoFan = getMultiplier('zimo');
       parts.push(`${zimoFan}（自摸）`);
-      const zimoExtraFan = tx.zimoType === '海底捞' ? getMultiplier('haidilao') :
+      const zimoExtraFan = tx.zimoType === '金钩钓' ? getMultiplier('jinjudiao') :
+                          tx.zimoType === '海底捞' ? getMultiplier('haidilao') :
                           tx.zimoType === '杠上花' ? getMultiplier('gangshanghua') : 0;
       if (zimoExtraFan > 0) parts.push(`${zimoExtraFan}（${tx.zimoType}）`);
     } else {
       parts.push(`0（被点胡）`);
-      const dpFan = tx.dianpaoType === '金钩钓' ? getMultiplier('jinjudiao') :
+      const dpFan = tx.dianpaoType === '金钩炮' ? getMultiplier('jingoupao') :
                    tx.dianpaoType === '杠上炮' ? getMultiplier('gangshangpao') :
                    tx.dianpaoType === '抢杠胡' ? getMultiplier('qiangganghu') : 0;
       if (dpFan > 0) parts.push(`${dpFan}（${tx.dianpaoType}）`);
@@ -2131,6 +2134,17 @@ function doOpenInputModal(playerId) {
 }
 
 function closeInputModal() {
+  if (inputModalState) {
+    const d = inputModalState.huInfo;
+    if (d.winType === '自摸' && d.zimoPlayers.length === 0) {
+      customConfirm('请先选择被自摸的玩家', () => {}, '提示', '知道了', '');
+      return;
+    }
+    if (d.winType === '被点胡' && d.dianpaoPlayer === null) {
+      customConfirm('请先选择点炮玩家', () => {}, '提示', '知道了', '');
+      return;
+    }
+  }
   document.getElementById('inputModal').classList.remove('active');
   document.querySelectorAll('.player-box').forEach(box => {
     box.classList.remove('hidden-player');
@@ -2288,14 +2302,15 @@ function updateHuScorePreview() {
     const zimoFan = getMultiplier('zimo');
     total += zimoFan;
     parts.push(`${zimoFan}（自摸）`);
-    const zimoExtraFan = d.zimoType === '海底捞' ? getMultiplier('haidilao') :
+    const zimoExtraFan = d.zimoType === '金钩钓' ? getMultiplier('jinjudiao') :
+                        d.zimoType === '海底捞' ? getMultiplier('haidilao') :
                         d.zimoType === '杠上花' ? getMultiplier('gangshanghua') : 0;
     total += zimoExtraFan;
     if (zimoExtraFan > 0) parts.push(`${zimoExtraFan}（${d.zimoType}）`);
   } else {
     // 被点胡
     parts.push(`0（被点胡）`);
-    const dpFan = d.dianpaoType === '金钩钓' ? getMultiplier('jinjudiao') :
+    const dpFan = d.dianpaoType === '金钩炮' ? getMultiplier('jingoupao') :
                  d.dianpaoType === '杠上炮' ? getMultiplier('gangshangpao') :
                  d.dianpaoType === '抢杠胡' ? getMultiplier('qiangganghu') : 0;
     total += dpFan;
@@ -2476,6 +2491,7 @@ function renderWinDetail() {
       <label>胡牌方式</label>
       <div class="segment">
         <button data-zimo="正常" class="${d.zimoType === '正常' ? 'active' : ''}">正常</button>
+        <button data-zimo="金钩钓" class="${d.zimoType === '金钩钓' ? 'active' : ''}">金钩钓</button>
         <button data-zimo="海底捞" class="${d.zimoType === '海底捞' ? 'active' : ''}">海底捞</button>
         <button data-zimo="杠上花" class="${d.zimoType === '杠上花' ? 'active' : ''}">杠上花</button>
       </div>
@@ -2494,7 +2510,7 @@ function renderWinDetail() {
       <label>胡牌方式</label>
       <div class="segment">
         <button data-dianpao="正常" class="${d.dianpaoType === '正常' ? 'active' : ''}">正常</button>
-        <button data-dianpao="金钩钓" class="${d.dianpaoType === '金钩钓' ? 'active' : ''}">金钩钓</button>
+        <button data-dianpao="金钩炮" class="${d.dianpaoType === '金钩炮' ? 'active' : ''}">金钩炮</button>
         <button data-dianpao="杠上炮" class="${d.dianpaoType === '杠上炮' ? 'active' : ''}">杠上炮</button>
         <button data-dianpao="抢杠胡" class="${d.dianpaoType === '抢杠胡' ? 'active' : ''}">抢杠胡</button>
       </div>
@@ -3079,7 +3095,12 @@ function customConfirm(message, callback, title, okText, cancelText) {
   titleEl.textContent = title || '确认';
   msgEl.textContent = message || '';
   okBtn.textContent = okText || '确定';
-  cancelBtn.textContent = cancelText || '取消';
+  if (cancelText === '') {
+    cancelBtn.style.display = 'none';
+  } else {
+    cancelBtn.style.display = '';
+    cancelBtn.textContent = cancelText || '取消';
+  }
   modal.classList.add('active');
 
   const cleanup = () => {
