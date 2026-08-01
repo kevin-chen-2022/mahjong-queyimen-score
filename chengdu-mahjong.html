@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -59,11 +59,10 @@
     padding: 12px 16px; background: var(--card);
     border-bottom: 1px solid var(--border);
   }
-  .topbar-inner { max-width: 600px; margin: 0 auto; width: 100%; display: grid; grid-template-columns: auto auto 1fr auto; align-items: center; gap: 8px; }
+  .topbar-inner { max-width: 600px; margin: 0 auto; width: 100%; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; }
   .topbar-inner > #newRoundBtn { grid-column: 1; justify-self: start; }
-  .topbar-inner > #resetBtn { grid-column: 2; justify-self: start; }
-  .topbar h1 { grid-column: 3; text-align: center; font-size: 16px; font-weight: 600; }
-  .topbar-actions { grid-column: 4; justify-self: end; display: flex; align-items: center; gap: 8px; }
+  .topbar h1 { grid-column: 2; text-align: center; font-size: 16px; font-weight: 600; }
+  .topbar-actions { grid-column: 3; justify-self: end; display: flex; align-items: center; gap: 8px; }
   .topbar-inner > button,
   .topbar-actions button {
     padding: 6px 12px; border: none; border-radius: 6px; cursor: pointer;
@@ -225,6 +224,11 @@
   }
   .player-box .detail-item { line-height: 1.4; }
   .player-box .detail-empty { color: var(--text-secondary); font-style: italic; }
+  .player-box .detail-subtitle {
+    font-size: 9px; color: var(--text-secondary); margin-top: 2px;
+  }
+  .player-box .detail-sub.gains { color: var(--green); }
+  .player-box .detail-sub.losses { color: var(--red); }
 
   /* Input card (modal) */
   .modal-overlay {
@@ -275,6 +279,9 @@
     font-size: 13px; color: var(--text);
   }
   .gang-btn.active { border-color: var(--accent); background: var(--accent-light); color: var(--accent); }
+  .input-section.section-disabled { opacity: 0.5; }
+  .input-section.section-disabled .gang-btn,
+  .input-section.section-disabled .section-clear-btn { pointer-events: none; cursor: not-allowed; }
   .player-select {
     display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px;
   }
@@ -634,12 +641,12 @@
   <!-- Top bar -->
   <div class="topbar">
     <div class="topbar-inner">
-      <button class="topbar-btn-primary" id="newRoundBtn" style="display:none;">确定</button>
-      <button class="topbar-btn-secondary" id="resetBtn" style="display:none;">清空</button>
+      <button class="topbar-btn-primary" id="newRoundBtn" style="display:none;">查叫记账</button>
       <h1>血战到底</h1>
       <div class="topbar-actions">
         <button class="topbar-btn-secondary" id="restartBtn" style="display:none;">重新记分</button>
         <button class="edit-toggle" id="editToggle" style="display:none;">✏️ 编辑</button>
+        <button class="topbar-btn-secondary" id="resetBtn" style="display:none;">清空</button>
         <button class="theme-toggle" id="themeToggle" title="切换主题">🌙</button>
         <button class="theme-toggle" id="helpBtn" title="帮助" style="display:flex;">？</button>
       </div>
@@ -804,10 +811,10 @@
                 <li>输入卡片分"刮风下雨"和"胡牌信息"两栏，实时计算得分。</li>
                 <li>刮风下雨：暗杠、点杠（单选被点玩家）、粘杠，选择后生成条目。</li>
                 <li>胡牌信息：先选牌型，再选胡牌方式（被点胡/自摸/诈胡）。</li>
-                <li>"花猪"和"未听牌"会隐藏后续选项；花猪/诈胡需赔付三家封顶分数。</li>
+                <li>"花猪"和"未听牌"会隐藏后续选项；花猪/相公/诈胡只赔付其他非诈胡玩家（诈胡玩家只输不赢）。</li>
                 <li>算分根数量默认根据杠数量自动设置，可手动调整。</li>
                 <li>方框顶栏显示上局所剩资产，角标为胡牌顺序。</li>
-                <li>顶部"确定"按钮保存当前局到历史，"清空"按钮复原当前局。</li>
+                <li>顶部"查叫记账"按钮会自动进行流局查叫并保存当前局到历史，"清空"按钮复原当前局。</li>
               </ul>
             </div>
           </div>
@@ -875,6 +882,7 @@ const defaultState = {
       { key: 'niangang', name: '粘杠', value: 1 },
       { key: 'gangshanghua', name: '杠上花', value: 1 },
       { key: 'gangshangpao', name: '杠上炮', value: 1 },
+      { key: 'qiangganghu', name: '抢杠胡', value: 1 },
       { key: 'jinjudiao', name: '金钩钓', value: 1 },
       { key: 'haidilao', name: '海底捞', value: 1 },
       { key: 'suangen', name: '算分根', value: 1 },
@@ -918,6 +926,20 @@ function loadState() {
           settings.multipliers = settings.multipliers || [];
           settings.multipliers.push({ ...dm });
         }
+      }
+      // One-time migration: move qiangganghu to right after gangshangpao (fix old data order)
+      const migrateFlag = 'mg_v1_qiangganghu';
+      if (!parsed._migrations || !parsed._migrations.includes(migrateFlag)) {
+        if (Array.isArray(settings.multipliers)) {
+          const idxQgh = settings.multipliers.findIndex(m => m.key === 'qiangganghu');
+          const idxGsp = settings.multipliers.findIndex(m => m.key === 'gangshangpao');
+          if (idxQgh !== -1 && idxGsp !== -1 && idxQgh !== idxGsp + 1) {
+            const [qgh] = settings.multipliers.splice(idxQgh, 1);
+            const newGspIdx = settings.multipliers.findIndex(m => m.key === 'gangshangpao');
+            settings.multipliers.splice(newGspIdx + 1, 0, qgh);
+          }
+        }
+        parsed._migrations = (parsed._migrations || []).concat(migrateFlag);
       }
       // Ensure new top-level settings flags exist
       return { ...defaultState, ...parsed, settings };
@@ -964,7 +986,7 @@ function calcHuScorePerLoser(player) {
   } else {
     if (player.dianpaoType === '金钩钓') total += getMultiplier('jinjudiao');
     if (player.dianpaoType === '杠上炮') total += getMultiplier('gangshangpao');
-    // 抢杠胡 has no specific multiplier, treat as normal
+    if (player.dianpaoType === '抢杠胡') total += getMultiplier('qiangganghu');
   }
   if (player.suangenCount > 0) {
     total += getMultiplier('suangen') * player.suangenCount;
@@ -973,6 +995,14 @@ function calcHuScorePerLoser(player) {
   const score = base * total;
   if (cap > 0 && score > cap) return cap;
   return score;
+}
+
+// 判断某玩家是否为诈胡（诈胡玩家只输不赢，不获赔付）
+function isZhahuPlayer(pid) {
+  const p = state.players.find(p => p.id === pid);
+  if (!p) return false;
+  const huTx = p.transactions.find(t => t.type === 'hu');
+  return huTx && huTx.winType === '诈胡';
 }
 
 function calcNetScore() {
@@ -995,12 +1025,18 @@ function calcNetScore() {
           scores[vid] -= score;
         }
       } else if (tx.type === 'hu') {
-        if (tx.handType === '花猪' || tx.winType === '诈胡') {
-          scores[player.id] -= penalty * 3;
+        if (tx.handType === '花猪' || tx.handType === '相公' || tx.winType === '诈胡') {
+          // 只赔付非诈胡玩家（诈胡玩家只输不赢）
+          const nonZhahu = [];
           for (let i = 0; i < 4; i++) {
-            if (i !== player.id) scores[i] += penalty;
+            if (i === player.id) continue;
+            if (!isZhahuPlayer(i)) nonZhahu.push(i);
           }
-        } else {
+          scores[player.id] -= penalty * nonZhahu.length;
+          for (const vid of nonZhahu) {
+            scores[vid] += penalty;
+          }
+        } else if (tx.winType === '自摸' || tx.winType === '被点胡') {
           const perLoser = calcHuScorePerLoser(tx);
           if (tx.winType === '自摸') {
             scores[player.id] += perLoser * tx.zimoPlayers.length;
@@ -1015,105 +1051,193 @@ function calcNetScore() {
       }
     }
   }
+
+  // 应用流局查叫调整项（退税对冲 + 罚款）
+  if (state.liujuResult) {
+    for (let i = 0; i < 4; i++) {
+      if (state.liujuResult[i]) {
+        for (const g of state.liujuResult[i].gains) scores[i] += g.score;
+        for (const l of state.liujuResult[i].losses) scores[i] += l.score;
+      }
+    }
+  }
   return scores;
 }
 
-function calcPlayerGainDetails(playerId) {
-  // What this player gained
-  const details = [];
+// 计算玩家三栏详情：刮风下雨、胡牌信息、流局查叫
+function calcPlayerDetails(playerId) {
+  const result = {
+    gang: { gains: [], losses: [] },
+    hu: { gains: [], losses: [] },
+    chadajiao: { gains: [], losses: [] }
+  };
   const player = state.players.find(p => p.id === playerId);
-  if (!player) return details;
+  if (!player) return result;
 
-  let gangCount = { '暗杠': 0, '点杠': 0, '粘杠': 0 };
+  const cap = state.settings.capLimit;
+  const penalty = cap > 0 ? cap : 8;
 
+  // ===== 刮风下雨 - 得分 =====
+  const gangCount = { '暗杠': 0, '点杠': 0, '粘杠': 0 };
   for (const tx of player.transactions) {
     if (tx.type === 'gang') {
       gangCount[tx.gangType] = (gangCount[tx.gangType] || 0) + 1;
       const score = calcGangScore(tx.multiplierKey);
+      const fan = getMultiplier(tx.multiplierKey);
       const victimNames = tx.victims.map(vid => getPlayerName(vid)).join('+');
-      const label = `${tx.gangType}${gangCount[tx.gangType]}=${victimNames}=${score * tx.victims.length}`;
-      details.push({ type: 'gang', label, score: score * tx.victims.length });
-    } else if (tx.type === 'hu') {
-      // 花猪/诈胡 are losses, not gains; skip here
-      if (tx.handType === '花猪' || tx.winType === '诈胡') continue;
-      const parts = [];
-      if (tx.winType === '自摸') {
-        const zimoScore = calcHuScorePerLoser(tx);
-        const victimNames = tx.zimoPlayers.map(vid => getPlayerName(vid)).join('+');
-        const victimCount = tx.zimoPlayers.length;
-        parts.push(`自摸=${victimNames}=${zimoScore}×${victimCount}=${zimoScore * victimCount}`);
-        parts.push(`牌型：${tx.handType}=${getHandTypeValue(tx.handType)}`);
-        if (tx.zimoType === '海底捞') parts.push('海底捞');
-        if (tx.zimoType === '杠上花') parts.push('杠上花');
-      } else {
-        const huScore = calcHuScorePerLoser(tx);
-        parts.push(`牌型：${tx.handType}=${getHandTypeValue(tx.handType)}`);
-        const dianpaoName = getPlayerName(tx.dianpaoPlayer);
-        parts.push(`点炮=${dianpaoName}=${huScore}`);
-        if (tx.dianpaoType === '金钩钓') parts.push('金钩钓');
-        if (tx.dianpaoType === '杠上炮') parts.push('杠上炮');
-        if (tx.dianpaoType === '抢杠胡') parts.push('抢杠胡');
-      }
-      if (tx.suangenCount > 0) {
-        parts.push(`算分根=${getMultiplier('suangen')*tx.suangenCount}`);
-      }
-      details.push({ type: 'hu', label: parts.join('；'), score: calcHuScorePerLoser(tx) * (tx.winType === '自摸' ? tx.zimoPlayers.length : 1) });
+      const label = `${tx.gangType}${gangCount[tx.gangType]}（${fan}番）×${tx.victims.length}家（${victimNames}）=${score * tx.victims.length}`;
+      result.gang.gains.push({ label, score: score * tx.victims.length });
     }
   }
 
-  // Check other players' transactions for 花猪/诈胡 where this player benefits
-  const cap = state.settings.capLimit;
-  const penalty = cap > 0 ? cap : 8;
-  for (const other of state.players) {
-    if (other.id === playerId) continue;
-    for (const tx of other.transactions) {
-      if (tx.type === 'hu' && (tx.handType === '花猪' || tx.winType === '诈胡')) {
-        const label = `${tx.handType === '花猪' ? '花猪' : '诈胡'}=${getPlayerName(other.id)}=${penalty}`;
-        details.push({ type: 'hu', label, score: penalty });
-      }
-    }
-  }
-
-  return details;
-}
-
-function calcPlayerLossDetails(playerId) {
-  const details = [];
-  const cap = state.settings.capLimit;
-  const penalty = cap > 0 ? cap : 8;
-
-  // Find transactions where this player is a victim
+  // ===== 刮风下雨 - 扣分 =====
   for (const actor of state.players) {
+    if (actor.id === playerId) continue;
+    const actorGangCount = { '暗杠': 0, '点杠': 0, '粘杠': 0 };
     for (const tx of actor.transactions) {
       if (tx.type === 'gang') {
+        actorGangCount[tx.gangType] = (actorGangCount[tx.gangType] || 0) + 1;
         if (tx.victims.includes(playerId)) {
           const score = calcGangScore(tx.multiplierKey);
-          const label = `被${tx.gangType}=${getPlayerName(actor.id)}=-${score}`;
-          details.push({ label, score: -score });
-        }
-      } else if (tx.type === 'hu') {
-        if (tx.handType === '花猪' || tx.winType === '诈胡') {
-          if (actor.id === playerId) {
-            const victimNames = state.players
-              .filter(p => p.id !== playerId)
-              .map(p => getPlayerName(p.id))
-              .join('+');
-            const label = `${tx.handType === '花猪' ? '花猪' : '诈胡'}=${victimNames}=-${penalty * 3}`;
-            details.push({ label, score: -penalty * 3 });
-          }
-        } else if (tx.winType === '自摸' && tx.zimoPlayers.includes(playerId)) {
-          const score = calcHuScorePerLoser(tx);
-          const label = `被自摸=${getPlayerName(actor.id)}=-${score}`;
-          details.push({ label, score: -score });
-        } else if (tx.winType === '被点胡' && tx.dianpaoPlayer === playerId) {
-          const score = calcHuScorePerLoser(tx);
-          const label = `点炮=${getPlayerName(actor.id)}=-${score}`;
-          details.push({ label, score: -score });
+          const fan = getMultiplier(tx.multiplierKey);
+          const label = `被${getPlayerName(actor.id)}${tx.gangType}${actorGangCount[tx.gangType]}（${fan}番）=-${score}`;
+          result.gang.losses.push({ label, score: -score });
         }
       }
     }
   }
-  return details;
+
+  // ===== 胡牌信息 - 得分（正常胡牌：非相公/花猪/诈胡，且有winType） =====
+  for (const tx of player.transactions) {
+    if (tx.type !== 'hu') continue;
+    if (tx.handType === '相公' || tx.handType === '花猪' || tx.winType === '诈胡' || !tx.winType) continue;
+
+    const baseScore = calcHuScorePerLoser(tx);
+    const handVal = getHandTypeValue(tx.handType);
+
+    // 第一行：胡牌基础分（加法表达式）
+    const parts = [`${handVal}（${tx.handType}）`];
+    if (tx.winType === '自摸') {
+      const zimoFan = getMultiplier('zimo');
+      parts.push(`${zimoFan}（自摸）`);
+      const zimoExtraFan = tx.zimoType === '海底捞' ? getMultiplier('haidilao') :
+                          tx.zimoType === '杠上花' ? getMultiplier('gangshanghua') : 0;
+      if (zimoExtraFan > 0) parts.push(`${zimoExtraFan}（${tx.zimoType}）`);
+    } else {
+      parts.push(`0（被点胡）`);
+      const dpFan = tx.dianpaoType === '金钩钓' ? getMultiplier('jinjudiao') :
+                   tx.dianpaoType === '杠上炮' ? getMultiplier('gangshangpao') :
+                   tx.dianpaoType === '抢杠胡' ? getMultiplier('qiangganghu') : 0;
+      if (dpFan > 0) parts.push(`${dpFan}（${tx.dianpaoType}）`);
+    }
+    if (tx.suangenCount > 0) {
+      const sgFan = getMultiplier('suangen') * tx.suangenCount;
+      parts.push(`${sgFan}（根）`);
+    }
+    const line1 = `胡牌基础分：${parts.join('+')}=${baseScore}分`;
+
+    // 第二行：胡牌总分
+    let totalCount, totalScore;
+    if (tx.winType === '自摸') {
+      totalCount = tx.zimoPlayers.length;
+    } else {
+      totalCount = 1;
+    }
+    totalScore = baseScore * totalCount;
+    const line2 = `胡牌总分：${baseScore}分×${totalCount}家=${totalScore}分`;
+
+    result.hu.gains.push({ label: line1 + '<br>' + line2, score: totalScore });
+  }
+
+  // ===== 胡牌信息 - 扣分（被自摸/点炮/诈胡赔付） =====
+  for (const actor of state.players) {
+    if (actor.id === playerId) continue;
+    for (const tx of actor.transactions) {
+      if (tx.type !== 'hu') continue;
+      if (tx.handType === '相公' || tx.handType === '花猪' || !tx.winType) continue;
+      if (tx.winType === '诈胡') continue; // 诈胡赔付单独处理
+      if (tx.winType === '自摸' && tx.zimoPlayers.includes(playerId)) {
+        const score = calcHuScorePerLoser(tx);
+        const label = `被${getPlayerName(actor.id)}自摸=-${score}`;
+        result.hu.losses.push({ label, score: -score });
+      } else if (tx.winType === '被点胡' && tx.dianpaoPlayer === playerId) {
+        const score = calcHuScorePerLoser(tx);
+        const label = `点炮给${getPlayerName(actor.id)}=-${score}`;
+        result.hu.losses.push({ label, score: -score });
+      }
+    }
+  }
+
+  // ===== 胡牌信息 - 诈胡赔付/获赔付（得分已在calcNetScore中计算，此处score=0仅显示） =====
+  const player2 = state.players.find(p => p.id === playerId);
+  const playerHuTx2 = player2.transactions.find(t => t.type === 'hu');
+  // 诈胡玩家自己：只赔付其他非诈胡玩家（诈胡玩家只输不赢）
+  if (playerHuTx2 && playerHuTx2.winType === '诈胡') {
+    const otherPlayers = state.players.filter(p => p.id !== playerId && !isZhahuPlayer(p.id));
+    const otherNames = otherPlayers.map(p => getPlayerName(p.id)).join('+');
+    const totalPay = penalty * otherPlayers.length;
+    result.hu.losses.push({
+      label: `因诈胡而赔付其他${otherPlayers.length}家。<br>赔付总分：${penalty}分×${otherPlayers.length}家（${otherNames}）=-${totalPay}分。`,
+      score: 0
+    });
+  }
+  // 其他非诈胡玩家：因某玩家诈胡而获赔付（诈胡玩家不获赔付）
+  for (const actor of state.players) {
+    if (actor.id === playerId) continue;
+    const actorHuTx = actor.transactions.find(t => t.type === 'hu');
+    if (actorHuTx && actorHuTx.winType === '诈胡') {
+      if (!isZhahuPlayer(playerId)) {
+        result.hu.gains.push({
+          label: `因${getPlayerName(actor.id)}诈胡而获赔付。<br>赔付分数：${penalty}分。`,
+          score: 0
+        });
+      }
+    }
+  }
+
+  // ===== 流局查叫 - 花猪/相公赔付（实时，无需点击按钮；得分已在calcNetScore中计算，此处score=0仅显示） =====
+  // 自己是花猪/相公：只赔付其他非诈胡玩家（诈胡玩家只输不赢）
+  if (playerHuTx2 && (playerHuTx2.handType === '花猪' || playerHuTx2.handType === '相公')) {
+    const otherPlayers = state.players.filter(p => p.id !== playerId && !isZhahuPlayer(p.id));
+    const otherNames = otherPlayers.map(p => getPlayerName(p.id)).join('+');
+    const totalPay = penalty * otherPlayers.length;
+    result.chadajiao.losses.push({
+      label: `因当${playerHuTx2.handType}而赔付其他${otherPlayers.length}家。<br>赔付总分：${penalty}分×${otherPlayers.length}家（${otherNames}）=-${totalPay}分。`,
+      score: 0
+    });
+  }
+  // 其他非诈胡玩家：因某玩家花猪/相公而获赔付（诈胡玩家不获赔付）
+  for (const actor of state.players) {
+    if (actor.id === playerId) continue;
+    const actorHuTx = actor.transactions.find(t => t.type === 'hu');
+    if (actorHuTx && (actorHuTx.handType === '花猪' || actorHuTx.handType === '相公')) {
+      if (!isZhahuPlayer(playerId)) {
+        result.chadajiao.gains.push({
+          label: `因${getPlayerName(actor.id)}当${actorHuTx.handType}而获赔付。<br>赔付分数：${penalty}分。`,
+          score: 0
+        });
+      }
+    }
+  }
+
+  // ===== 流局查叫 - 从 state.liujuResult 读取（流局查叫按钮触发的未听牌罚款；退税已通过清空杠事务实现） =====
+  if (state.liujuResult && state.liujuResult[playerId]) {
+    const r = state.liujuResult[playerId];
+    r.gains.forEach(g => result.chadajiao.gains.push(g));
+    r.losses.forEach(l => result.chadajiao.losses.push(l));
+  }
+
+  return result;
+}
+
+// 兼容旧调用（如有）
+function calcPlayerGainDetails(playerId) {
+  const d = calcPlayerDetails(playerId);
+  return [...d.gang.gains, ...d.hu.gains, ...d.chadajiao.gains];
+}
+function calcPlayerLossDetails(playerId) {
+  const d = calcPlayerDetails(playerId);
+  return [...d.gang.losses, ...d.hu.losses, ...d.chadajiao.losses];
 }
 
 function getPlayerName(id) {
@@ -1131,6 +1255,12 @@ function renderPlayers() {
   for (const r of state.history) {
     for (let i = 0; i < 4; i++) histAssets[i] += r.scores[i];
   }
+  // Apply per-player custom asset overrides
+  for (const p of state.players) {
+    if (p.customAsset !== undefined && p.customAsset !== null) {
+      histAssets[p.id] = p.customAsset;
+    }
+  }
 
   list.innerHTML = '';
   // Sort by position (1-4)
@@ -1140,39 +1270,49 @@ function renderPlayers() {
     const player = sorted[i];
     const score = netScores[player.id];
     const asset = histAssets[player.id];
-    const gainDetails = calcPlayerGainDetails(player.id);
-    const lossDetails = calcPlayerLossDetails(player.id);
+    const details = calcPlayerDetails(player.id);
 
     const hasManualScore = player.manualScore !== undefined && player.manualScore !== null;
     const huTx = player.transactions.find(t => t.type === 'hu');
-    const hasHu = !!huTx;
 
-    // Build hu label: "牌型+胡牌方式"
-    let huLabel = '';
-    if (hasHu) {
-      if (huTx.handType === '花猪') {
-        huLabel = '花猪';
-      } else if (huTx.winType === '诈胡') {
-        huLabel = huTx.handType + '·诈胡';
-      } else {
-        huLabel = huTx.handType + '·' + huTx.winType;
-      }
+    // 左栏：牌型-胡牌类型（默认"未听牌-未胡牌"）
+    let huLabel = '未听牌-未胡牌';
+    if (huTx) {
+      const handName = huTx.handType || '未听牌';
+      const winName = huTx.winType || '未胡牌';
+      huLabel = `${handName}-${winName}`;
     }
 
-    // For manual scores, don't show gain/loss breakdown
-    const showGains = hasManualScore ? [] : gainDetails;
-    const showLosses = hasManualScore ? [] : lossDetails;
-
-    // Score display: show label (未胡牌 or 牌型+胡牌方式) on top, score value below
+    // Score display: show label on top, score value below
     const scoreClass = score > 0 ? 'positive' : score < 0 ? 'negative' : 'zero';
     let scoreDisplayHtml;
     if (hasManualScore) {
       scoreDisplayHtml = `<div class="hu-label">手动计分</div><div class="score-value ${scoreClass}">${score > 0 ? '+' : ''}${score}</div>`;
-    } else if (hasHu) {
-      scoreDisplayHtml = `<div class="hu-label">${escapeHtml(huLabel)}</div><div class="score-value ${scoreClass}">${score > 0 ? '+' : ''}${score}</div>`;
     } else {
-      // No hu info: show "未胡牌" with real-time score below
-      scoreDisplayHtml = `<div class="hu-label">未胡牌</div><div class="score-value ${scoreClass}">${score > 0 ? '+' : ''}${score}</div>`;
+      scoreDisplayHtml = `<div class="hu-label">${escapeHtml(huLabel)}</div><div class="score-value ${scoreClass}">${score > 0 ? '+' : ''}${score}</div>`;
+    }
+
+    // 右栏：三栏（刮风下雨、胡牌信息、流局查叫），每栏有得分和扣分，有内容才显示
+    let detailsHtml;
+    if (hasManualScore) {
+      detailsHtml = '<div class="detail-empty">（手动计分）</div>';
+    } else {
+      const sections = [
+        { key: 'gang', title: '刮风下雨', data: details.gang },
+        { key: 'hu', title: '胡牌信息', data: details.hu },
+        { key: 'chadajiao', title: '流局查叫', data: details.chadajiao },
+      ];
+      detailsHtml = sections.map(sec => {
+        const hasGains = sec.data.gains.length > 0;
+        const hasLosses = sec.data.losses.length > 0;
+        if (!hasGains && !hasLosses) return '';
+        return `<div class="detail-section ${sec.key}">
+          <div class="detail-title">${sec.title}</div>
+          ${hasGains ? `<div class="detail-sub gains"><div class="detail-subtitle">得分</div>${sec.data.gains.map(d => `<div class="detail-item">${d.label}</div>`).join('')}</div>` : ''}
+          ${hasLosses ? `<div class="detail-sub losses"><div class="detail-subtitle">扣分</div>${sec.data.losses.map(d => `<div class="detail-item">${d.label}</div>`).join('')}</div>` : ''}
+        </div>`;
+      }).join('');
+      if (!detailsHtml) detailsHtml = '<div class="detail-empty">（无）</div>';
     }
 
     const box = document.createElement('div');
@@ -1192,15 +1332,7 @@ function renderPlayers() {
           ${scoreDisplayHtml}
         </div>
         <div class="details" data-player-id="${player.id}" data-action="longpress-input">
-          ${hasManualScore ? '<div class="detail-empty">（手动计分）</div>' : `
-          <div class="detail-section gains">
-            <div class="detail-title">得分</div>
-            ${showGains.length > 0 ? showGains.map(d => `<div class="detail-item">${d.label}</div>`).join('') : '<div class="detail-empty">无</div>'}
-          </div>
-          <div class="detail-section losses">
-            <div class="detail-title">扣分</div>
-            ${showLosses.length > 0 ? showLosses.map(d => `<div class="detail-item">${d.label}</div>`).join('') : '<div class="detail-empty">无</div>'}
-          </div>`}
+          ${detailsHtml}
         </div>
       </div>
     `;
@@ -1215,35 +1347,6 @@ function renderPlayers() {
 }
 
 function bindPlayerEvents() {
-  // Long press on name to edit
-  document.querySelectorAll('.name').forEach(el => {
-    setupLongPress(el, () => {
-      const box = el.closest('.player-box');
-      const playerId = parseInt(box.dataset.playerId);
-      showEditPopup(el, getPlayerName(playerId), '玩家名称', (val) => {
-        const player = state.players.find(p => p.id === playerId);
-        if (player) { player.name = val; saveState(); renderPlayers(); }
-      });
-    });
-  });
-  
-  // Long press on score to show edit
-  document.querySelectorAll('.score').forEach(el => {
-    setupLongPress(el, () => {
-      const box = el.closest('.player-box');
-      const playerId = parseInt(box.dataset.playerId);
-      showEditPopup(el, '手动调整', '分数', (val) => {
-        const player = state.players.find(p => p.id === playerId);
-        if (player) {
-          // Manual override: store as custom score offset
-          player.manualScore = parseFloat(val) || 0;
-          saveState();
-          renderPlayers();
-        }
-      });
-    });
-  });
-  
   // Long press on details to open input card
   document.querySelectorAll('.details').forEach(el => {
     setupLongPress(el, () => {
@@ -1360,11 +1463,25 @@ function setupPlayerInteractions() {
     const action = el.dataset.action;
     const playerId = parseInt(el.dataset.playerId || el.closest('[data-player-id]')?.dataset.playerId);
     if (playerId === undefined || isNaN(playerId)) return;
-    
+
     if (action === 'edit-name') {
-      showEditPopup(el, getPlayerName(playerId), '名称', (val) => {
+      e.stopPropagation();
+      showEditPopup(el, getPlayerName(playerId), '玩家名称', (val) => {
         const player = state.players.find(p => p.id === playerId);
         if (player) { player.name = val; saveState(); renderPlayers(); }
+      });
+    } else if (action === 'edit-score') {
+      e.stopPropagation();
+      const player = state.players.find(p => p.id === playerId);
+      if (!player) return;
+      const baseAsset = state.settings.playerAsset || 0;
+      let currentAsset = baseAsset;
+      for (const r of state.history) currentAsset += r.scores[playerId];
+      if (player.customAsset !== undefined && player.customAsset !== null) currentAsset = player.customAsset;
+      showAssetEditPopup(el, currentAsset, (val) => {
+        player.customAsset = val;
+        saveState();
+        renderPlayers();
       });
     }
   });
@@ -1850,6 +1967,9 @@ function bindSettingRowDrag(list, stateKey) {
 }
 
 // ============ Edit Popup ============
+let suppressNextClick = false;
+let currentCloseOnOutside = null;
+
 function showEditPopup(anchorEl, currentValue, label, onConfirm) {
   const popup = document.getElementById('editPopup');
   popup.innerHTML = `
@@ -1861,37 +1981,101 @@ function showEditPopup(anchorEl, currentValue, label, onConfirm) {
     </div>
   `;
   popup.style.display = 'block';
-  
-  // Position near the element
+  suppressNextClick = true;
+
   const rect = anchorEl.getBoundingClientRect();
   popup.style.left = Math.min(rect.left, window.innerWidth - 220) + 'px';
   popup.style.top = (rect.bottom + 5) + 'px';
-  
+
   const input = popup.querySelector('#editInput');
   input.focus();
   input.select();
-  
-  const close = () => { popup.style.display = 'none'; };
-  
+
+  const close = () => {
+    popup.style.display = 'none';
+    if (currentCloseOnOutside) {
+      document.removeEventListener('click', currentCloseOnOutside);
+      currentCloseOnOutside = null;
+    }
+  };
+
   popup.querySelector('#editCancel').onclick = close;
   popup.querySelector('#editConfirm').onclick = () => {
     const val = input.value.trim();
     if (val) { onConfirm(val); }
     close();
   };
-  
-  // Close on outside click
+
+  if (currentCloseOnOutside) {
+    document.removeEventListener('click', currentCloseOnOutside);
+  }
   const closeOnOutside = (e) => {
+    if (suppressNextClick) { suppressNextClick = false; return; }
     if (!popup.contains(e.target)) {
       close();
-      document.removeEventListener('click', closeOnOutside);
     }
   };
-  setTimeout(() => document.addEventListener('click', closeOnOutside), 10);
+  currentCloseOnOutside = closeOnOutside;
+  document.addEventListener('click', closeOnOutside);
+}
+
+function showAssetEditPopup(anchorEl, currentValue, onConfirm) {
+  const popup = document.getElementById('editPopup');
+  popup.innerHTML = `
+    <div style="font-size:13px;margin-bottom:8px;color:var(--text-secondary)">修改资产</div>
+    <input type="number" id="editInput" value="${currentValue}" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;background:var(--input-bg);color:var(--text);font-size:14px;margin-bottom:10px;" placeholder="输入资产数值">
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button class="btn-cancel" id="editCancel">取消</button>
+      <button class="btn-confirm" id="editConfirm">确定</button>
+    </div>
+  `;
+  popup.style.display = 'block';
+  suppressNextClick = true;
+
+  const rect = anchorEl.getBoundingClientRect();
+  popup.style.left = Math.min(rect.left, window.innerWidth - 220) + 'px';
+  popup.style.top = (rect.bottom + 5) + 'px';
+
+  const input = popup.querySelector('#editInput');
+  input.focus();
+  input.select();
+
+  const close = () => {
+    popup.style.display = 'none';
+    if (currentCloseOnOutside) {
+      document.removeEventListener('click', currentCloseOnOutside);
+      currentCloseOnOutside = null;
+    }
+  };
+
+  popup.querySelector('#editCancel').onclick = close;
+  popup.querySelector('#editConfirm').onclick = () => {
+    const val = parseFloat(input.value);
+    if (!isNaN(val)) { onConfirm(val); }
+    close();
+  };
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') popup.querySelector('#editConfirm').click();
+    if (e.key === 'Escape') close();
+  });
+
+  if (currentCloseOnOutside) {
+    document.removeEventListener('click', currentCloseOnOutside);
+  }
+  const closeOnOutside = (e) => {
+    if (suppressNextClick) { suppressNextClick = false; return; }
+    if (!popup.contains(e.target)) {
+      close();
+    }
+  };
+  currentCloseOnOutside = closeOnOutside;
+  document.addEventListener('click', closeOnOutside);
 }
 
 // ============ Input Modal ============
 let inputModalState = null;
+let inputModalOpenedAt = 0;
 
 function openInputModal(playerId) {
   const player = state.players.find(p => p.id === playerId);
@@ -1943,6 +2127,7 @@ function doOpenInputModal(playerId) {
   document.getElementById('inputModalTitle').textContent = `${player.name} - 得分输入`;
   renderInputModal();
   document.getElementById('inputModal').classList.add('active');
+  inputModalOpenedAt = Date.now();
 }
 
 function closeInputModal() {
@@ -1961,17 +2146,20 @@ function renderInputModal() {
   
   const otherPlayers = state.players.filter(p => p.id !== player.id);
   const handTypes = state.settings.handTypes.map(h => h.name);
+
+  // 刮风下雨区是否禁用：牌型为相公/花猪或胡牌方式为诈胡时禁用
+  const gangDisabled = (inputModalState.huInfo.handType === '相公' || inputModalState.huInfo.handType === '花猪' || inputModalState.huInfo.winType === '诈胡');
   
   body.innerHTML = `
-    <div class="input-section">
+    <div class="input-section${gangDisabled ? ' section-disabled' : ''}">
       <h4>
-        <span>刮风下雨</span>
-        <button class="section-clear-btn" id="clearGangHeaderBtn" title="清空刮风下雨">清空</button>
+        <span>刮风下雨${gangDisabled ? '（不可用）' : ''}</span>
+        <button class="section-clear-btn" id="clearGangHeaderBtn" title="清空刮风下雨"${gangDisabled ? ' disabled' : ''}>清空</button>
       </h4>
       <div class="gang-buttons">
-        <button class="gang-btn ${inputModalState.activeGangType === '暗杠' ? 'active' : ''}" data-gang="暗杠">暗杠</button>
-        <button class="gang-btn ${inputModalState.activeGangType === '点杠' ? 'active' : ''}" data-gang="点杠">点杠</button>
-        <button class="gang-btn ${inputModalState.activeGangType === '粘杠' ? 'active' : ''}" data-gang="粘杠">粘杠</button>
+        <button class="gang-btn ${inputModalState.activeGangType === '暗杠' ? 'active' : ''}" data-gang="暗杠"${gangDisabled ? ' disabled' : ''}>暗杠</button>
+        <button class="gang-btn ${inputModalState.activeGangType === '点杠' ? 'active' : ''}" data-gang="点杠"${gangDisabled ? ' disabled' : ''}>点杠</button>
+        <button class="gang-btn ${inputModalState.activeGangType === '粘杠' ? 'active' : ''}" data-gang="粘杠"${gangDisabled ? ' disabled' : ''}>粘杠</button>
       </div>
       <div id="gangArea"></div>
     </div>
@@ -1983,14 +2171,15 @@ function renderInputModal() {
       <div class="hu-row" style="flex-direction:column;align-items:flex-start;">
         <label>牌型</label>
         <div class="segment" style="width:100%;flex-wrap:wrap;border:none;padding:0;background:transparent;">
+          <button data-hand="相公" class="${inputModalState.huInfo.handType === '相公' ? 'active' : ''}">相公</button>
           <button data-hand="花猪" class="${inputModalState.huInfo.handType === '花猪' ? 'active' : ''}">花猪</button>
           <button data-hand="" class="${inputModalState.huInfo.handType === '' ? 'active' : ''}">未听牌</button>
           ${handTypes.map(t => `<button data-hand="${t}" class="${inputModalState.huInfo.handType === t ? 'active' : ''}">${t}</button>`).join('')}
         </div>
       </div>
-      ${inputModalState.huInfo.handType && inputModalState.huInfo.handType !== '花猪' ? `
+      ${(inputModalState.huInfo.handType && inputModalState.huInfo.handType !== '相公' && inputModalState.huInfo.handType !== '花猪' && inputModalState.huInfo.handType !== '') ? `
       <div class="hu-row">
-        <label>胡牌方式</label>
+        <label>胡牌类型</label>
         <div class="segment">
           <button data-win="" class="${inputModalState.huInfo.winType === '' ? 'active' : ''}">未胡牌</button>
           <button data-win="被点胡" class="${inputModalState.huInfo.winType === '被点胡' ? 'active' : ''}">被点胡</button>
@@ -1999,15 +2188,10 @@ function renderInputModal() {
         </div>
       </div>
       ` : ''}
-      ${(inputModalState.huInfo.handType && inputModalState.huInfo.handType !== '花猪' && inputModalState.huInfo.winType && inputModalState.huInfo.winType !== '诈胡') ? `
+      ${(inputModalState.huInfo.handType && inputModalState.huInfo.handType !== '相公' && inputModalState.huInfo.handType !== '花猪' && inputModalState.huInfo.handType !== '' && inputModalState.huInfo.winType && inputModalState.huInfo.winType !== '诈胡') ? `
       <div id="winDetail"></div>
       <div style="display:flex;gap:8px;margin-top:12px;">
         <div id="huScorePreview" style="flex:1;padding:10px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;font-size:13px;color:var(--text-secondary);text-align:center;">请选择牌型</div>
-      </div>
-      ` : ''}
-      ${(inputModalState.huInfo.handType === '花猪' || (inputModalState.huInfo.handType && inputModalState.huInfo.handType !== '花猪' && inputModalState.huInfo.winType)) ? `
-      <div style="display:flex;gap:8px;margin-top:12px;">
-        <button id="saveHuBtn" style="flex:1;padding:10px;background:var(--accent);color:white;border:none;border-radius:8px;cursor:pointer;font-size:14px;">保存胡牌</button>
       </div>
       ` : ''}
     </div>
@@ -2015,7 +2199,7 @@ function renderInputModal() {
 
   // Render existing transactions
   renderGangArea();
-  if (inputModalState.huInfo.handType && inputModalState.huInfo.winType && inputModalState.huInfo.winType !== '诈胡') renderWinDetail();
+  if (inputModalState.huInfo.handType && inputModalState.huInfo.handType !== '相公' && inputModalState.huInfo.handType !== '花猪' && inputModalState.huInfo.handType !== '' && inputModalState.huInfo.winType && inputModalState.huInfo.winType !== '诈胡') renderWinDetail();
   
   // Bind events
   body.querySelectorAll('.gang-btn').forEach(btn => {
@@ -2025,20 +2209,45 @@ function renderInputModal() {
   body.querySelectorAll('[data-hand]').forEach(btn => {
     btn.onclick = () => {
       inputModalState.huInfo.handType = btn.dataset.hand;
+      // 相公/花猪/未听牌：重置胡牌信息到初始状态，避免矛盾显示
+      if (btn.dataset.hand === '相公' || btn.dataset.hand === '花猪' || btn.dataset.hand === '') {
+        inputModalState.huInfo.winType = '';
+        inputModalState.huInfo.zimoType = '正常';
+        inputModalState.huInfo.dianpaoType = '正常';
+        inputModalState.huInfo.dianpaoPlayer = null;
+        inputModalState.huInfo.zimoPlayers = [];
+        inputModalState.huInfo.suangenCount = 0;
+        // 相公/花猪：清空该玩家所有杠事务
+        if (btn.dataset.hand === '相公' || btn.dataset.hand === '花猪') {
+          const player = state.players.find(p => p.id === inputModalState.playerId);
+          player.transactions = player.transactions.filter(t => t.type !== 'gang');
+          inputModalState.gangActions = [];
+          inputModalState.activeGangType = null;
+        }
+      }
+      syncHuToPlayer();
       renderInputModal();
     };
   });
-  
+
   body.querySelectorAll('[data-win]').forEach(btn => {
     btn.onclick = () => {
       const prevWinType = inputModalState.huInfo.winType;
       inputModalState.huInfo.winType = btn.dataset.win;
-      // When switching from "未胡牌" to a winning mode, default suangenCount to gang count
-      if (!prevWinType && btn.dataset.win) {
+      // 诈胡：清空该玩家所有杠事务
+      if (btn.dataset.win === '诈胡') {
+        const player = state.players.find(p => p.id === inputModalState.playerId);
+        player.transactions = player.transactions.filter(t => t.type !== 'gang');
+        inputModalState.gangActions = [];
+        inputModalState.activeGangType = null;
+        inputModalState.huInfo.suangenCount = 0;
+      } else if (!prevWinType && btn.dataset.win) {
+        // When switching from "未胡牌" to a winning mode, default suangenCount to gang count
         const player = state.players.find(p => p.id === inputModalState.playerId);
         const gangCount = player.transactions.filter(t => t.type === 'gang').length;
         inputModalState.huInfo.suangenCount = gangCount;
       }
+      syncHuToPlayer();
       renderInputModal();
     };
   });
@@ -2073,30 +2282,42 @@ function updateHuScorePreview() {
   
   const handVal = getHandTypeValue(d.handType) || 0;
   let total = handVal;
-  
+  const parts = [`${handVal}（${d.handType}）`];
+
   if (d.winType === '自摸') {
-    total += getMultiplier('zimo');
-    if (d.zimoType === '海底捞') total += getMultiplier('haidilao');
-    if (d.zimoType === '杠上花') total += getMultiplier('gangshanghua');
+    const zimoFan = getMultiplier('zimo');
+    total += zimoFan;
+    parts.push(`${zimoFan}（自摸）`);
+    const zimoExtraFan = d.zimoType === '海底捞' ? getMultiplier('haidilao') :
+                        d.zimoType === '杠上花' ? getMultiplier('gangshanghua') : 0;
+    total += zimoExtraFan;
+    if (zimoExtraFan > 0) parts.push(`${zimoExtraFan}（${d.zimoType}）`);
   } else {
-    if (d.dianpaoType === '金钩钓') total += getMultiplier('jinjudiao');
-    if (d.dianpaoType === '杠上炮') total += getMultiplier('gangshangpao');
+    // 被点胡
+    parts.push(`0（被点胡）`);
+    const dpFan = d.dianpaoType === '金钩钓' ? getMultiplier('jinjudiao') :
+                 d.dianpaoType === '杠上炮' ? getMultiplier('gangshangpao') :
+                 d.dianpaoType === '抢杠胡' ? getMultiplier('qiangganghu') : 0;
+    total += dpFan;
+    if (dpFan > 0) parts.push(`${dpFan}（${d.dianpaoType}）`);
   }
 
-  // 算分根：如果开启数量或已选择数量，则增加乘数×数量
+  // 算分根
   if (d.suangenCount > 0) {
-    total += getMultiplier('suangen') * d.suangenCount;
+    const sgFan = getMultiplier('suangen') * d.suangenCount;
+    total += sgFan;
+    parts.push(`${sgFan}（根）`);
   }
-  
+
   const base = state.settings.baseScore;
   const cap = state.settings.capLimit;
   let score = base * total;
   if (cap > 0 && score > cap) score = cap;
-  
+
   const count = d.winType === '自摸' ? d.zimoPlayers.length : 1;
   const totalScore = score * count;
-  
-  preview.innerHTML = `单局得分：<strong>${score}</strong> × ${count} = <strong style="font-size:16px;color:${totalScore >= 0 ? 'var(--green)' : 'var(--red)'}">${totalScore}</strong> 分`;
+
+  preview.innerHTML = `胡牌基础分：${parts.join('+')}=<strong>${score}分</strong><br>胡牌总分：<strong>${score}分</strong>×${count}家=<strong style="font-size:16px;color:${totalScore >= 0 ? 'var(--green)' : 'var(--red)'}">${totalScore}分</strong>`;
   preview.style.color = 'var(--text)';
 }
 
@@ -2155,6 +2376,10 @@ function renderGangArea() {
 
 function showGangSelector(gangType) {
   if (!inputModalState) return;
+  // 刮风下雨区禁用时不响应
+  const ht = inputModalState.huInfo.handType;
+  const wt = inputModalState.huInfo.winType;
+  if (ht === '相公' || ht === '花猪' || wt === '诈胡') return;
   const player = state.players.find(p => p.id === inputModalState.playerId);
   const otherPlayers = state.players.filter(p => p.id !== player.id);
   
@@ -2248,7 +2473,7 @@ function renderWinDetail() {
   
   if (d.winType === '自摸') {
     html += `<div class="hu-row">
-      <label>自摸方式</label>
+      <label>胡牌方式</label>
       <div class="segment">
         <button data-zimo="正常" class="${d.zimoType === '正常' ? 'active' : ''}">正常</button>
         <button data-zimo="海底捞" class="${d.zimoType === '海底捞' ? 'active' : ''}">海底捞</button>
@@ -2266,12 +2491,12 @@ function renderWinDetail() {
     </div>`;
   } else {
     html += `<div class="hu-row">
-      <label>点胡方式</label>
+      <label>胡牌方式</label>
       <div class="segment">
         <button data-dianpao="正常" class="${d.dianpaoType === '正常' ? 'active' : ''}">正常</button>
         <button data-dianpao="金钩钓" class="${d.dianpaoType === '金钩钓' ? 'active' : ''}">金钩钓</button>
-        <button data-dianpao="抢杠胡" class="${d.dianpaoType === '抢杠胡' ? 'active' : ''}">抢杠胡</button>
         <button data-dianpao="杠上炮" class="${d.dianpaoType === '杠上炮' ? 'active' : ''}">杠上炮</button>
+        <button data-dianpao="抢杠胡" class="${d.dianpaoType === '抢杠胡' ? 'active' : ''}">抢杠胡</button>
       </div>
     </div>`;
     
@@ -2307,10 +2532,10 @@ function renderWinDetail() {
   
   // Bind events
   document.getElementById('winDetail').querySelectorAll('[data-zimo]').forEach(btn => {
-    btn.onclick = () => { inputModalState.huInfo.zimoType = btn.dataset.zimo; renderWinDetail(); updateHuScorePreview(); };
+    btn.onclick = () => { inputModalState.huInfo.zimoType = btn.dataset.zimo; syncHuToPlayer(); renderWinDetail(); updateHuScorePreview(); };
   });
   document.getElementById('winDetail').querySelectorAll('[data-dianpao]').forEach(btn => {
-    btn.onclick = () => { inputModalState.huInfo.dianpaoType = btn.dataset.dianpao; renderWinDetail(); updateHuScorePreview(); };
+    btn.onclick = () => { inputModalState.huInfo.dianpaoType = btn.dataset.dianpao; syncHuToPlayer(); renderWinDetail(); updateHuScorePreview(); };
   });
   document.getElementById('winDetail').querySelectorAll('.checkbox-group label').forEach(lbl => {
     lbl.onclick = (e) => {
@@ -2319,6 +2544,7 @@ function renderWinDetail() {
       const idx = inputModalState.huInfo.zimoPlayers.indexOf(pid);
       if (idx >= 0) inputModalState.huInfo.zimoPlayers.splice(idx, 1);
       else inputModalState.huInfo.zimoPlayers.push(pid);
+      syncHuToPlayer();
       renderWinDetail();
       updateHuScorePreview();
     };
@@ -2327,6 +2553,7 @@ function renderWinDetail() {
     lbl.onclick = (e) => {
       e.preventDefault();
       inputModalState.huInfo.dianpaoPlayer = parseInt(lbl.dataset.pid);
+      syncHuToPlayer();
       renderWinDetail();
       updateHuScorePreview();
     };
@@ -2336,11 +2563,39 @@ function renderWinDetail() {
     sgSeg.querySelectorAll('button[data-sg]').forEach(btn => {
       btn.onclick = () => {
         inputModalState.huInfo.suangenCount = parseInt(btn.dataset.sg);
+        syncHuToPlayer();
         renderWinDetail();
         updateHuScorePreview();
       };
     });
   }
+}
+
+// 实时同步 inputModalState.huInfo 到 player.transactions（无需点保存按钮）
+function syncHuToPlayer() {
+  if (!inputModalState) return;
+  const d = inputModalState.huInfo;
+  const player = state.players.find(p => p.id === inputModalState.playerId);
+  if (!player) return;
+  // 移除已有 hu 事务
+  player.transactions = player.transactions.filter(t => t.type !== 'hu');
+  // 写入当前 huInfo（允许部分状态保存）
+  player.transactions.push({
+    _id: Date.now() + Math.random().toString(36).substr(2, 5),
+    type: 'hu',
+    handType: d.handType,
+    winType: d.winType,
+    zimoType: d.zimoType || '正常',
+    dianpaoType: d.dianpaoType || '正常',
+    dianpaoPlayer: d.dianpaoPlayer ?? null,
+    zimoPlayers: d.zimoPlayers ? [...d.zimoPlayers] : [],
+    suangenCount: d.suangenCount || 0,
+  });
+  // 清除流局查叫结果（用户修改了胡牌信息，需要重新查叫）
+  state.liujuResult = null;
+  state.liujuAnomalies = null;
+  saveState();
+  renderPlayers();
 }
 
 function saveHuTransaction() {
@@ -2391,6 +2646,9 @@ function clearHuTransaction() {
     zimoPlayers: [],
     suangenCount: 0,
   };
+  // 清除流局查叫结果
+  state.liujuResult = null;
+  state.liujuAnomalies = null;
   saveState();
   renderInputModal();
   renderPlayers();
@@ -2658,6 +2916,81 @@ function renderSettings() {
   }
 }
 
+// ============ 流局查叫 ============
+function performLijuChajiao(silent) {
+  const cap = state.settings.capLimit;
+  const base = state.settings.baseScore;
+
+  // 获赔玩家：牌型为可胡牌牌型（非相公/花猪/未听牌）且胡牌方式为空（听牌但未胡）
+  const isTingPlayer = (huTx) => huTx && huTx.handType && huTx.handType !== '相公' && huTx.handType !== '花猪' && huTx.handType !== '' && !huTx.winType;
+  const tingPlayers = state.players.filter(p => isTingPlayer(p.transactions.find(t => t.type === 'hu')));
+
+  // 无获赔玩家则无需查叫
+  if (tingPlayers.length === 0) {
+    customConfirm('当前牌局无需查叫！', null, '流局查叫');
+    return;
+  }
+
+  // 赔付玩家：牌型为"未听牌"的玩家（无hu事务或handType为空）
+  const payingPlayers = state.players.filter(p => {
+    const huTx = p.transactions.find(t => t.type === 'hu');
+    return !huTx || !huTx.handType || huTx.handType === '';
+  });
+
+  // 初始化流局查叫结果
+  const liujuResult = {};
+  for (let i = 0; i < 4; i++) liujuResult[i] = { gains: [], losses: [] };
+
+  // ===== 退税：清空赔付玩家的所有杠事务（不再对冲） =====
+  for (const player of payingPlayers) {
+    player.transactions = player.transactions.filter(t => t.type !== 'gang');
+  }
+
+  // ===== 罚款：未听牌赔付获赔玩家 =====
+  for (const player of payingPlayers) {
+    const payDetails = [];
+    let totalPay = 0;
+    for (const tingPlayer of tingPlayers) {
+      const huTx = tingPlayer.transactions.find(t => t.type === 'hu');
+      // 胡牌满分 = 牌型 + 自摸 + 算分根数量
+      const handVal = getHandTypeValue(huTx.handType);
+      const zimoFan = getMultiplier('zimo');
+      const sgFan = huTx.suangenCount > 0 ? getMultiplier('suangen') * huTx.suangenCount : 0;
+      let maxScore = base * (handVal + zimoFan + sgFan);
+      if (cap > 0 && maxScore > cap) maxScore = cap;
+      payDetails.push(`${getPlayerName(tingPlayer.id)}（${maxScore}分）`);
+      totalPay += maxScore;
+      // 给获赔玩家添加获赔付
+      liujuResult[tingPlayer.id].gains.push({
+        label: `流局因${getPlayerName(player.id)}未听牌而获赔付。<br>赔付分数：${maxScore}分。`,
+        score: maxScore
+      });
+    }
+    if (payDetails.length > 0) {
+      const tingNames = tingPlayers.map(t => getPlayerName(t.id)).join('、');
+      liujuResult[player.id].losses.push({
+        label: `流局因未听牌而赔付${tingNames}。<br>赔付总分：${payDetails.join('+')}=-${totalPay}分。`,
+        score: -totalPay
+      });
+    }
+  }
+
+  // 保存结果
+  state.liujuResult = liujuResult;
+  state.liujuAnomalies = null;
+  saveState();
+  renderPlayers();
+
+  // 提示（silent 模式下跳过，由调用方显示提示）
+  if (silent) return;
+  if (payingPlayers.length === 0) {
+    customConfirm('流局查叫完成，无需赔付。', null, '流局查叫');
+  } else {
+    const summary = payingPlayers.map(p => getPlayerName(p.id)).join('、');
+    customConfirm(`流局查叫完成，${summary} 未听牌，需赔付已听牌玩家。`, null, '流局查叫');
+  }
+}
+
 // ============ Reset Scoring (no history save) ============
 function resetScoring() {
   customConfirm('确定要复原吗？当前所有输入将清除且不会保存到历史记录。', (ok) => {
@@ -2666,6 +2999,8 @@ function resetScoring() {
       player.transactions = [];
       player.manualScore = undefined;
     }
+    state.liujuResult = null;
+    state.liujuAnomalies = null;
     saveState();
     renderPlayers();
   });
@@ -2687,6 +3022,8 @@ function startNewRound() {
     player.transactions = [];
     player.manualScore = undefined;
   }
+  state.liujuResult = null;
+  state.liujuAnomalies = null;
   state.historyPage = 0;
   saveState();
   renderPlayers();
@@ -2731,7 +3068,7 @@ function customPrompt(title, placeholder, callback) {
 }
 
 // ============ Custom Confirm (replacement for confirm()) ============
-function customConfirm(message, callback, title) {
+function customConfirm(message, callback, title, okText, cancelText) {
   const modal = document.getElementById('confirmModal');
   const titleEl = document.getElementById('confirmTitle');
   const msgEl = document.getElementById('confirmMessage');
@@ -2741,6 +3078,8 @@ function customConfirm(message, callback, title) {
 
   titleEl.textContent = title || '确认';
   msgEl.textContent = message || '';
+  okBtn.textContent = okText || '确定';
+  cancelBtn.textContent = cancelText || '取消';
   modal.classList.add('active');
 
   const cleanup = () => {
@@ -2812,14 +3151,33 @@ function init() {
   // Input modal close
   document.getElementById('inputModalClose').addEventListener('click', closeInputModal);
   document.getElementById('inputModal').addEventListener('click', (e) => {
-    if (e.target.id === 'inputModal') closeInputModal();
+    if (e.target.id === 'inputModal' && Date.now() - inputModalOpenedAt > 300) closeInputModal();
   });
   
-  // New round
+  // 查叫记账：合并流局查叫功能
   document.getElementById('newRoundBtn').addEventListener('click', () => {
-    customConfirm('确定要开局新一局吗？当前得分将保存到历史记录。', (ok) => {
-      if (ok) startNewRound();
-    });
+    // 检查是否有获赔玩家（牌型为可胡牌牌型且胡牌方式为"未胡牌"）
+    const isTingPlayer = (huTx) => huTx && huTx.handType && huTx.handType !== '相公' && huTx.handType !== '花猪' && huTx.handType !== '' && !huTx.winType;
+    const hasTingPlayer = state.players.some(p => isTingPlayer(p.transactions.find(t => t.type === 'hu')));
+
+    if (hasTingPlayer) {
+      // 有听牌玩家，自动进行流局查叫
+      performLijuChajiao(true);
+      customConfirm('已经进行了流局查叫。是否保存当前牌局的玩家分数，并重开一局？', (ok) => {
+        if (ok) startNewRound();
+      });
+    } else {
+      // 无听牌玩家，提示是否需要先行设置
+      customConfirm('当前牌局无需查叫，是否需要为流局查叫而先行设置？', (ok) => {
+        if (!ok) {
+          // 点击"没必要"：继续保存并重开
+          customConfirm('没有进行流局查叫。是否保存当前牌局的玩家分数，并重开一局？', (ok2) => {
+            if (ok2) startNewRound();
+          });
+        }
+        // 点击"去设置"：终止，让用户去设置
+      }, null, '去设置', '没必要');
+    }
   });
 
   // Reset scoring (no history save)

@@ -1,7 +1,7 @@
 # Build APK using Android SDK build-tools - simplified with aapt package (v1) approach
 param([string]$ProjectDir = (Get-Location).Path)
 
-$ErrorActionPreference = 'Stop'
+$ErrorActionPreference = 'Continue'
 
 # ---- Paths ----
 $ANDROID_HOME = "C:\Users\ASUS\AppData\Local\Android\Sdk"
@@ -55,27 +55,13 @@ Write-Host "base-res.apk exists: $(Test-Path $BASE_RES_APK)"
 $RJavaSource = Get-ChildItem "$RGenDir" -Recurse -Filter R.java -ErrorAction SilentlyContinue
 if ($RJavaSource) { Write-Host "R.java at: $($RJavaSource.FullName)" } else { Write-Host "R.java not found" }
 
-# ---- 2) Compile Java (MainActivity + R.java) using Eclipse JDT ECJ ----
-Write-Host "--- Step 2: ecj compile MainActivity + R.java (Java 17 bytecode) ---"
+# ---- 2) Compile Java (MainActivity + R.java) using javac ----
+Write-Host "--- Step 2: javac compile MainActivity + R.java ---"
 $javaFiles = @(Get-ChildItem $JAVA_SRC -Recurse -Filter *.java | ForEach-Object { $_.FullName })
 if ($RJavaSource) { $javaFiles += $RJavaSource.FullName }
 
-$ecjJar = "$APK_ROOT\tools\ecj.jar"
-if (-not (Test-Path $ecjJar)) {
-  Write-Host "ecj.jar not found at $ecjJar, attempting download..."
-  New-Item -ItemType Directory -Force (Split-Path $ecjJar) | Out-Null
-  $ecjUrl = "https://repo1.maven.org/maven2/org/eclipse/jdt/ecj/3.37.0/ecj-3.37.0.jar"
-  $ProgressPreference = 'SilentlyContinue'
-  Invoke-WebRequest -Uri $ecjUrl -OutFile $ecjJar -UseBasicParsing
-}
-$javaExe = (Get-Command java -ErrorAction Stop).Source
-& $javaExe -jar "$ecjJar" `
-  -encoding UTF-8 `
-  -source 17 -target 17 `
-  -warn:none `
-  -classpath "$PLATFORM" `
-  -d "$OBJ" `
-  @javaFiles 2>&1 | ForEach-Object { "$_" }
+$javacExe = (Get-Command javac -ErrorAction Stop).Source
+& $javacExe -encoding UTF-8 -source 17 -target 17 -classpath "$PLATFORM" -d "$OBJ" $javaFiles 2>&1 | ForEach-Object { "$_" }
 Write-Host "ecj exit code: $LASTEXITCODE"
 $classesCount = (Get-ChildItem $OBJ -Recurse -Filter *.class -ErrorAction SilentlyContinue).Count
 Write-Host "Produced .class files: $classesCount"
@@ -84,7 +70,15 @@ if ($classesCount -eq 0) { throw "ECJ produced no .class files" }
 # ---- 3) D8 classes -> classes.dex ----
 Write-Host "--- Step 3: d8 classes -> dex ---"
 $classFiles = Get-ChildItem $OBJ -Recurse -Filter *.class | ForEach-Object { $_.FullName }
-& $D8 --lib "$PLATFORM" --output "$DEX" @classFiles 2>&1 | ForEach-Object { "$_" }
+$d8Bat = "$env:TEMP\d8run-$(Get-Random).bat"
+$sb = New-Object System.Text.StringBuilder
+[void]$sb.AppendLine('@echo off')
+$d8Cmd = """$D8"" --lib ""$PLATFORM"" --min-api 24 --output ""$DEX"""
+foreach ($c in $classFiles) { $d8Cmd = $d8Cmd + " """ + $c + """" }
+[void]$sb.AppendLine($d8Cmd)
+[System.IO.File]::WriteAllText($d8Bat, $sb.ToString())
+& $d8Bat 2>&1 | ForEach-Object { "$_" }
+Remove-Item $d8Bat -ErrorAction SilentlyContinue
 if (-not (Test-Path "$DEX\classes.dex")) { throw "d8 failed to produce classes.dex" }
 Write-Host "classes.dex exists: Yes"
 
@@ -120,10 +114,13 @@ if (-not (Test-Path $ksPath)) {
     -storepass android -keypass android `
     -dname "CN=Android Debug,O=Android,C=US" 2>&1 | ForEach-Object { "$_" }
 }
+$APK_SIGNED_ASCII = "$OUT_DIR\mahjong-v1.0.0.apk"
 $APK_SIGNED = "$OUT_DIR\成都麻将缺一门计分-v1.0.0.apk"
 & $APKSIGNER sign `
   --ks "$ksPath" --ks-pass pass:android --ks-key-alias androiddebugkey --key-pass pass:android `
-  --out "$APK_SIGNED" "$UNALIGNED" 2>&1 | ForEach-Object { "$_" }
+  --out "$APK_SIGNED_ASCII" "$UNALIGNED" 2>&1 | ForEach-Object { "$_" }
+# Rename to Chinese name after signing
+if (Test-Path $APK_SIGNED_ASCII) { Copy-Item $APK_SIGNED_ASCII $APK_SIGNED -Force }
 
 Write-Host "==== APK BUILD RESULT ===="
 if (Test-Path $APK_SIGNED) {

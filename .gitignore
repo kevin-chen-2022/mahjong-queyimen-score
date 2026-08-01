@@ -5,6 +5,8 @@ node_modules/
 dist-*/
 apk-build/
 www/index.html
+*.exe
+*.apk
 
 # Android build artifacts
 android/app/build/
