@@ -817,9 +817,9 @@
                 <li>长按方框右侧详情区域，弹出"得分信息输入卡片"。</li>
                 <li>输入卡片分"刮风下雨"和"胡牌信息"两栏，实时计算得分。</li>
                 <li>刮风下雨：暗杠、点杠（单选被点玩家）、巴杠，选择后生成条目。</li>
-                <li>胡牌信息：先选牌型，再选胡牌方式（被点胡/自摸/诈胡）。</li>
-                <li>"花猪"和"未听牌"会隐藏后续选项；花猪/相公/诈胡只赔付获赔玩家（可胡牌牌型且胡牌方式为"未胡牌"）。</li>
-                <li>退税规则：花猪/相公不退税（可继续开杠收钱）；诈胡/未听牌(流局查叫后)的杠若涉及已胡牌玩家则仅保留已胡牌玩家，否则清空。</li>
+                <li>胡牌信息：依次选择牌型-胡牌类型（被点胡/自摸/诈胡）-胡牌方式-涉及玩家-算分根数量。</li>
+                <li>选择"相公""花猪"或"未听牌"会隐藏后续选项；花猪/相公/诈胡按封顶番赔付给所有未胡牌玩家（含未听牌者，但不含其他花猪/相公/诈胡及已胡牌玩家）。流局查叫时，未听牌玩家需按已听牌玩家牌型可能实现的最大番数进行赔付。</li>
+                <li>退税规则：花猪不退税（杠钱正常计分）；相公/诈胡/未听牌(流局查叫后)实时退税——杠若涉及已胡牌玩家则仅保留已胡牌玩家，否则清空不计分。</li>
                 <li>算分根数量默认根据杠数量自动设置，可手动调整。</li>
                 <li>方框顶栏显示上局所剩资产，角标为胡牌顺序。</li>
                 <li>顶部"查叫记账"按钮会自动进行流局查叫并保存当前局到历史，"清空"按钮复原当前局。</li>
@@ -1170,12 +1170,28 @@ function isHuPlayer(pid) {
   return huTx && (huTx.winType === '被点胡' || huTx.winType === '自摸');
 }
 
-// 判断某玩家是否为获赔玩家（可胡牌牌型且胡牌方式为"未胡牌"）
+// 判断某玩家是否为听牌未胡玩家（可胡牌牌型且胡牌方式为"未胡牌"）—— 用于流局查叫的获赔方
 function isTingPlayer(pid) {
   const p = state.players.find(p => p.id === pid);
   if (!p) return false;
   const huTx = p.transactions.find(t => t.type === 'hu');
   return huTx && huTx.handType && huTx.handType !== '相公' && huTx.handType !== '花猪' && huTx.handType !== '' && !huTx.winType;
+}
+
+// 判断某玩家是否为"正常未胡牌玩家"（未胡牌且非花猪/相公/诈胡）
+// 用作花猪/相公/诈胡的赔付对象：包含未听牌者和听牌未胡者，排除已胡牌玩家和有过错的未胡牌者
+function isNormalUnhuPlayer(pid) {
+  const p = state.players.find(p => p.id === pid);
+  if (!p) return false;
+  const huTx = p.transactions.find(t => t.type === 'hu');
+  if (!huTx) return true; // 无胡牌事务 = 未听牌
+  // 已胡牌（被点胡/自摸）不获赔
+  if (huTx.winType === '被点胡' || huTx.winType === '自摸') return false;
+  // 有过错的未胡牌者（花猪/相公/诈胡）不获赔
+  if (huTx.handType === '花猪' || huTx.handType === '相公') return false;
+  if (huTx.winType === '诈胡') return false;
+  // 剩下：未听牌（handType空）或听牌未胡（handType正常且!winType）
+  return true;
 }
 
 // 判断是否需要实时退税（相公/诈胡/未听牌(流局查叫后)实时退税；花猪不退税）
@@ -1231,14 +1247,14 @@ function calcNetScore() {
         }
       } else if (tx.type === 'hu') {
         if (tx.handType === '花猪' || tx.handType === '相公' || tx.winType === '诈胡') {
-          // 只赔付获赔玩家（可胡牌牌型且胡牌方式为"未胡牌"）
-          const tingPlayers = [];
+          // 赔付给所有正常未胡牌玩家（含未听牌者，排除已胡牌及花猪/相公/诈胡）
+          const payees = [];
           for (let i = 0; i < 4; i++) {
             if (i === player.id) continue;
-            if (isTingPlayer(i)) tingPlayers.push(i);
+            if (isNormalUnhuPlayer(i)) payees.push(i);
           }
-          scores[player.id] -= penalty * tingPlayers.length;
-          for (const vid of tingPlayers) {
+          scores[player.id] -= penalty * payees.length;
+          for (const vid of payees) {
             scores[vid] += penalty;
           }
         } else if (tx.winType === '自摸' || tx.winType === '被点胡') {
@@ -1419,29 +1435,29 @@ function calcPlayerDetails(playerId) {
   // ===== 胡牌信息 - 诈胡赔付/获赔付（得分已在calcNetScore中计算，此处score=0仅显示） =====
   const player2 = state.players.find(p => p.id === playerId);
   const playerHuTx2 = player2.transactions.find(t => t.type === 'hu');
-  // 诈胡玩家自己：只赔付获赔玩家（可胡牌牌型且胡牌方式为"未胡牌"）
+  // 诈胡玩家自己：赔付给所有正常未胡牌玩家（含未听牌者，排除已胡牌及花猪/相公/诈胡）
   if (playerHuTx2 && playerHuTx2.winType === '诈胡') {
-    const tingPlayers = state.players.filter(p => p.id !== playerId && isTingPlayer(p.id));
-    if (tingPlayers.length > 0) {
-      const tingNames = tingPlayers.map(p => getPlayerName(p.id)).join('+');
-      const totalPay = penalty * tingPlayers.length;
+    const payees = state.players.filter(p => p.id !== playerId && isNormalUnhuPlayer(p.id));
+    if (payees.length > 0) {
+      const payeeNames = payees.map(p => getPlayerName(p.id)).join('+');
+      const totalPay = penalty * payees.length;
       result.hu.losses.push({
-        label: `因诈胡而赔付${tingPlayers.length}家获赔玩家。<br>赔付总分：${penalty}分×${tingPlayers.length}家（${tingNames}）=-${totalPay}分。`,
+        label: `因诈胡而赔付${payees.length}家未胡牌玩家。<br>赔付总分：${penalty}分×${payees.length}家（${payeeNames}）=-${totalPay}分。`,
         score: 0
       });
     } else {
       result.hu.losses.push({
-        label: `因诈胡需赔付获赔玩家，但当前无获赔玩家（其他玩家需设置可胡牌牌型且胡牌方式为"未胡牌"）。`,
+        label: `因诈胡需赔付未胡牌玩家，但当前无未胡牌玩家（其他玩家均已胡牌或为花猪/相公/诈胡）。`,
         score: 0
       });
     }
   }
-  // 获赔玩家：因某玩家诈胡而获赔付
+  // 获赔玩家：因某玩家诈胡而获赔付（仅正常未胡牌玩家获赔）
   for (const actor of state.players) {
     if (actor.id === playerId) continue;
     const actorHuTx = actor.transactions.find(t => t.type === 'hu');
     if (actorHuTx && actorHuTx.winType === '诈胡') {
-      if (isTingPlayer(playerId)) {
+      if (isNormalUnhuPlayer(playerId)) {
         result.hu.gains.push({
           label: `因${getPlayerName(actor.id)}诈胡而获赔付。<br>赔付分数：${penalty}分。`,
           score: 0
@@ -1451,29 +1467,29 @@ function calcPlayerDetails(playerId) {
   }
 
   // ===== 流局查叫 - 花猪/相公赔付（实时，无需点击按钮；得分已在calcNetScore中计算，此处score=0仅显示） =====
-  // 自己是花猪/相公：只赔付获赔玩家（可胡牌牌型且胡牌方式为"未胡牌"）
+  // 自己是花猪/相公：赔付给所有正常未胡牌玩家（含未听牌者，排除已胡牌及花猪/相公/诈胡）
   if (playerHuTx2 && (playerHuTx2.handType === '花猪' || playerHuTx2.handType === '相公')) {
-    const tingPlayers = state.players.filter(p => p.id !== playerId && isTingPlayer(p.id));
-    if (tingPlayers.length > 0) {
-      const tingNames = tingPlayers.map(p => getPlayerName(p.id)).join('+');
-      const totalPay = penalty * tingPlayers.length;
+    const payees = state.players.filter(p => p.id !== playerId && isNormalUnhuPlayer(p.id));
+    if (payees.length > 0) {
+      const payeeNames = payees.map(p => getPlayerName(p.id)).join('+');
+      const totalPay = penalty * payees.length;
       result.chadajiao.losses.push({
-        label: `因当${playerHuTx2.handType}而赔付${tingPlayers.length}家获赔玩家。<br>赔付总分：${penalty}分×${tingPlayers.length}家（${tingNames}）=-${totalPay}分。`,
+        label: `因当${playerHuTx2.handType}而赔付${payees.length}家未胡牌玩家。<br>赔付总分：${penalty}分×${payees.length}家（${payeeNames}）=-${totalPay}分。`,
         score: 0
       });
     } else {
       result.chadajiao.losses.push({
-        label: `因当${playerHuTx2.handType}需赔付获赔玩家，但当前无获赔玩家（其他玩家需设置可胡牌牌型且胡牌方式为"未胡牌"）。`,
+        label: `因当${playerHuTx2.handType}需赔付未胡牌玩家，但当前无未胡牌玩家（其他玩家均已胡牌或为花猪/相公/诈胡）。`,
         score: 0
       });
     }
   }
-  // 获赔玩家：因某玩家花猪/相公而获赔付
+  // 获赔玩家：因某玩家花猪/相公而获赔付（仅正常未胡牌玩家获赔）
   for (const actor of state.players) {
     if (actor.id === playerId) continue;
     const actorHuTx = actor.transactions.find(t => t.type === 'hu');
     if (actorHuTx && (actorHuTx.handType === '花猪' || actorHuTx.handType === '相公')) {
-      if (isTingPlayer(playerId)) {
+      if (isNormalUnhuPlayer(playerId)) {
         result.chadajiao.gains.push({
           label: `因${getPlayerName(actor.id)}当${actorHuTx.handType}而获赔付。<br>赔付分数：${penalty}分。`,
           score: 0
