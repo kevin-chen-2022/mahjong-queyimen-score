@@ -819,7 +819,7 @@
                 <li>刮风下雨：暗杠、点杠（单选被点玩家）、巴杠，选择后生成条目。</li>
                 <li>胡牌信息：依次选择牌型-胡牌类型（被点胡/自摸/诈胡）-胡牌方式-涉及玩家-算分根数量。</li>
                 <li>选择"相公""花猪"或"未听牌"会隐藏后续选项；花猪/相公/诈胡按封顶番赔付给所有未胡牌玩家（含未听牌者，但不含其他花猪/相公/诈胡及已胡牌玩家）。流局查叫时，未听牌玩家需按已听牌玩家牌型可能实现的最大番数进行赔付。</li>
-                <li>退税规则：花猪不退税（杠钱正常计分）；相公/诈胡/未听牌(流局查叫后)实时退税——杠若涉及已胡牌玩家则仅保留已胡牌玩家，否则清空不计分。</li>
+                <li>退税规则：花猪不退税（杠钱正常计分）；相公/诈胡/未听牌(流局查叫后)在身份确认或流局查叫时物理清杠——删除涉及未胡牌玩家的杠记录，保留涉及已胡牌玩家的杠记录（且清空该杠中的未胡牌玩家），此操作不可逆。相公/花猪确认身份后新杠照常计分；诈胡保留的旧杠（已胡牌玩家）照常计分，诈胡新杠（未胡牌玩家）不计分。</li>
                 <li>算分根数量默认根据杠数量自动设置，可手动调整。</li>
                 <li>方框顶栏显示上局所剩资产，角标为胡牌顺序。</li>
                 <li>顶部"查叫记账"按钮会自动进行流局查叫并保存当前局到历史，"清空"按钮复原当前局。</li>
@@ -1194,28 +1194,49 @@ function isNormalUnhuPlayer(pid) {
   return true;
 }
 
-// 判断是否需要实时退税（相公/诈胡/未听牌(流局查叫后)实时退税；花猪不退税）
+// 判断是否需要实时退税（仅用于身份确认/流局查叫触发物理清空，不再用于动态过滤）
+// 相公/诈胡确认身份时触发；未听牌玩家在流局查叫后触发；花猪不退税
 function needsTaxRefund(pid) {
   const p = state.players.find(p => p.id === pid);
   if (!p) return false;
   const huTx = p.transactions.find(t => t.type === 'hu');
-  // 无胡牌信息或牌型为空 = 未听牌，在流局查叫后退税
+  // 无胡牌信息或牌型为空 = 未听牌，仅在流局查叫后退税
   if (!huTx || !huTx.handType || huTx.handType === '') {
     return !!state.liujuResult;
   }
-  // 花猪不退税
+  // 花猪不退税（杠钱照收）
   if (huTx.handType === '花猪') return false;
-  // 相公、诈胡实时退税
-  if (huTx.handType === '相公') return true;
-  if (huTx.winType === '诈胡') return true;
+  // 相公、诈胡：身份确认时已物理清空，此处仅作为状态标记返回 true
+  if (huTx.handType === '相公') return false; // 旧杠已物理清空，新杠照收，无需动态过滤
+  if (huTx.winType === '诈胡') return false;  // 旧杠已物理清空，新杠靠 isZhahuPlayer 不计分
   return false;
 }
 
+// 物理清空杠事务（统一退税操作）：相公/诈胡身份确认时、流局查叫未听牌玩家时调用
+// 规则：删除所有涉及未胡牌玩家的杠记录，保留涉及已胡牌玩家的杠记录（且清空该杠中的未胡牌玩家）
+function refundGangTransactions(playerId) {
+  const p = state.players.find(p => p.id === playerId);
+  if (!p) return;
+  const newTxs = [];
+  for (const tx of p.transactions) {
+    if (tx.type !== 'gang') { newTxs.push(tx); continue; }
+    // 只保留 victims 中已胡牌的玩家（被点胡/自摸）
+    const kept = tx.victims.filter(vid => isHuPlayer(vid));
+    if (kept.length === 0) continue; // 无已胡牌玩家，删除该杠
+    // 保留该杠但 victims 缩减为已胡牌玩家
+    newTxs.push({ ...tx, victims: kept });
+  }
+  p.transactions = newTxs;
+}
+
 // 获取应用退税规则后的杠victims
-// 退税规则：如果杠的victims中有已胡牌玩家，则只保留已胡牌玩家；否则返回空数组（删除该杠）
+// 诈胡玩家：只对已胡牌玩家计分（保留的旧杠 victims 已是已胡牌玩家→照常计分；新杠 victims 是未胡牌玩家→过滤后为空→不计分）
+// 其他玩家：物理清空后 victims 已是有效计分对象，直接返回
 function getEffectiveGangVictims(playerId, tx) {
-  if (!needsTaxRefund(playerId)) return tx.victims;
-  return tx.victims.filter(vid => isHuPlayer(vid));
+  if (isZhahuPlayer(playerId)) {
+    return tx.victims.filter(vid => isHuPlayer(vid));
+  }
+  return tx.victims;
 }
 
 function calcNetScore() {
@@ -1235,9 +1256,7 @@ function calcNetScore() {
 
     for (const tx of player.transactions) {
       if (tx.type === 'gang') {
-        // 诈胡玩家的杠只记录不计分
-        if (isZhahuPlayer(player.id)) continue;
-        // 相公/未听牌(流局查叫后)应用实时退税规则
+        // 诈胡玩家：只对已胡牌玩家计分（由getEffectiveGangVictims过滤）
         const effectiveVictims = getEffectiveGangVictims(player.id, tx);
         if (effectiveVictims.length === 0) continue;
         const score = calcGangScore(tx.multiplierKey);
@@ -1309,15 +1328,12 @@ function calcPlayerDetails(playerId) {
       const score = calcGangScore(tx.multiplierKey);
       const fan = getMultiplier(tx.multiplierKey);
       const isZhahu = isZhahuPlayer(player.id);
-      // 相公/诈胡/未听牌(流局查叫后)的杠应用实时退税规则
+      // 诈胡玩家：只对已胡牌玩家计分（保留的旧杠照常计分；新杠 victims 是未胡牌玩家→不计分但显示）
       const effectiveVictims = getEffectiveGangVictims(player.id, tx);
-      if (effectiveVictims.length === 0) continue; // 退税后无已胡牌玩家，删除该杠
-      const victimNames = effectiveVictims.map(vid => getPlayerName(vid)).join('+');
-      const victimCount = effectiveVictims.length;
-      // 诈胡玩家的杠只记录不计分
-      const gainScore = isZhahu ? 0 : score * effectiveVictims.length;
-      const refunded = needsTaxRefund(player.id);
-      const note = isZhahu ? '（诈胡不计分）' : (refunded ? '（退税：仅保留已胡牌玩家）' : '');
+      const victimNames = tx.victims.map(vid => getPlayerName(vid)).join('+');
+      const victimCount = tx.victims.length;
+      const gainScore = isZhahu ? score * effectiveVictims.length : score * tx.victims.length;
+      const note = isZhahu && effectiveVictims.length === 0 ? '（诈胡不计分）' : (isZhahu ? '（诈胡：仅已胡牌玩家计分）' : '');
       const label = `${tx.gangType}${gangCount[tx.gangType]}（${fan}番）×${victimCount}家（${victimNames}）=${gainScore}${note}`;
       result.gang.gains.push({ label, score: gainScore });
     }
@@ -1331,15 +1347,13 @@ function calcPlayerDetails(playerId) {
       if (tx.type === 'gang') {
         actorGangCount[tx.gangType] = (actorGangCount[tx.gangType] || 0) + 1;
         const isZhahu = isZhahuPlayer(actor.id);
-        // 相公/诈胡/未听牌(流局查叫后)的杠应用实时退税规则
+        // 诈胡玩家：被杠的玩家只在杠有计分时才显示扣分（effectiveVictims 包含该玩家）
         const effectiveVictims = getEffectiveGangVictims(actor.id, tx);
-        if (effectiveVictims.includes(playerId)) {
+        if (tx.victims.includes(playerId) && effectiveVictims.includes(playerId)) {
           const score = calcGangScore(tx.multiplierKey);
           const fan = getMultiplier(tx.multiplierKey);
-          // 诈胡玩家的杠：被杠的玩家不扣分
-          const lossScore = isZhahu ? 0 : -score;
-          const refunded = needsTaxRefund(actor.id);
-          const note = isZhahu ? '（诈胡不计分）' : (refunded ? '（退税：仅保留已胡牌玩家）' : '');
+          const lossScore = -score;
+          const note = isZhahu ? '（诈胡：仅已胡牌玩家计分）' : '';
           const label = `被${getPlayerName(actor.id)}${tx.gangType}${actorGangCount[tx.gangType]}（${fan}番）=${lossScore}${note}`;
           result.gang.losses.push({ label, score: lossScore });
         }
@@ -2494,6 +2508,7 @@ function renderInputModal() {
   
   body.querySelectorAll('[data-hand]').forEach(btn => {
     btn.onclick = () => {
+      const prevHandType = inputModalState.huInfo.handType;
       inputModalState.huInfo.handType = btn.dataset.hand;
       // 相公/花猪/未听牌：重置胡牌信息到初始状态，避免矛盾显示
       if (btn.dataset.hand === '相公' || btn.dataset.hand === '花猪' || btn.dataset.hand === '') {
@@ -2504,8 +2519,24 @@ function renderInputModal() {
         inputModalState.huInfo.zimoPlayers = [];
         inputModalState.huInfo.suangenCount = 0;
       }
-      // 相公：实时退税（由needsTaxRefund/getEffectiveGangVictims动态应用）
       syncHuToPlayer();
+      // 相公身份确认时触发物理清杠退税（仅从非相公切换到相公时）
+      if (btn.dataset.hand === '相公' && prevHandType !== '相公') {
+        const playerId = inputModalState.playerId;
+        const player = state.players.find(p => p.id === playerId);
+        const hasGang = player.transactions.some(t => t.type === 'gang');
+        if (hasGang) {
+          customConfirm('选择"相公"将清空涉及未胡牌玩家的杠记录（仅保留涉及已胡牌玩家的杠），此操作不可逆。是否继续？', (ok) => {
+            if (ok) {
+              refundGangTransactions(playerId);
+              saveState();
+              renderPlayers();
+            }
+            renderInputModal();
+          }, '相公退税确认');
+          return;
+        }
+      }
       renderInputModal();
     };
   });
@@ -2514,7 +2545,7 @@ function renderInputModal() {
     btn.onclick = () => {
       const prevWinType = inputModalState.huInfo.winType;
       inputModalState.huInfo.winType = btn.dataset.win;
-      // 诈胡：实时退税（由needsTaxRefund/getEffectiveGangVictims动态应用），新杠只记录不计分
+      // 诈胡：身份确认时触发物理清杠退税，新杠只记录不计分
       if (btn.dataset.win === '诈胡') {
         inputModalState.huInfo.suangenCount = 0;
       } else if (!prevWinType && btn.dataset.win) {
@@ -2524,6 +2555,23 @@ function renderInputModal() {
         inputModalState.huInfo.suangenCount = gangCount;
       }
       syncHuToPlayer();
+      // 诈胡身份确认时触发物理清杠退税（仅从非诈胡切换到诈胡时）
+      if (btn.dataset.win === '诈胡' && prevWinType !== '诈胡') {
+        const playerId = inputModalState.playerId;
+        const player = state.players.find(p => p.id === playerId);
+        const hasGang = player.transactions.some(t => t.type === 'gang');
+        if (hasGang) {
+          customConfirm('选择"诈胡"将清空涉及未胡牌玩家的杠记录（仅保留涉及已胡牌玩家的杠），此操作不可逆。是否继续？', (ok) => {
+            if (ok) {
+              refundGangTransactions(playerId);
+              saveState();
+              renderPlayers();
+            }
+            renderInputModal();
+          }, '诈胡退税确认');
+          return;
+        }
+      }
       renderInputModal();
     };
   });
@@ -2606,13 +2654,12 @@ function updateHuScorePreview() {
   for (const tx of player.transactions) {
     if (tx.type !== 'gang') continue;
     const effVictims = getEffectiveGangVictims(player.id, tx);
-    if (effVictims.length === 0) continue;
     const gScore = calcGangScore(tx.multiplierKey);
     const gFan = getMultiplier(tx.multiplierKey);
-    const gCount = effVictims.length;
-    const gTotal = isZhahu ? 0 : gScore * gCount;
+    const gCount = tx.victims.length;
+    const gTotal = isZhahu ? gScore * effVictims.length : gScore * gCount;
     gangTotal += gTotal;
-    const note = isZhahu ? '（诈胡不计分）' : (needsTaxRefund(player.id) ? '（退税）' : '');
+    const note = isZhahu && effVictims.length === 0 ? '（诈胡不计分）' : (isZhahu ? '（诈胡：仅已胡牌玩家计分）' : '');
     gangLines.push(`${tx.gangType}（${gFan}分）×${gCount}家=${gTotal}${note}`);
   }
 
@@ -2646,30 +2693,28 @@ function renderGangArea() {
   if (!inputModalState) return;
   const area = document.getElementById('gangArea');
   const player = state.players.find(p => p.id === inputModalState.playerId);
-  
+
   // Show existing gang transactions
   const existing = player.transactions.filter(t => t.type === 'gang');
-  const refunded = needsTaxRefund(player.id);
   const isZhahu = isZhahuPlayer(player.id);
-  
+
   if (existing.length === 0 && inputModalState.gangActions.length === 0) {
     area.innerHTML = '';
     return;
   }
-  
+
   let html = '';
   const typeCount = {};
-  
+
   // Show existing ones first (these are saved)
   for (const tx of existing) {
     typeCount[tx.gangType] = (typeCount[tx.gangType] || 0) + 1;
     const score = calcGangScore(tx.multiplierKey);
-    // 相公/诈胡/未听牌(流局查叫后)的杠应用实时退税规则
+    // 诈胡玩家：只对已胡牌玩家计分（保留的旧杠照常计分；新杠 victims 是未胡牌玩家→不计分但显示）
     const effectiveVictims = getEffectiveGangVictims(player.id, tx);
-    if (effectiveVictims.length === 0) continue; // 退税后无已胡牌玩家，跳过该杠
-    const victimNames = effectiveVictims.map(v => getPlayerName(v)).join('+');
-    const displayScore = isZhahu ? 0 : score * effectiveVictims.length;
-    const note = isZhahu ? ' <span style="color:var(--text-muted);font-size:12px;">(诈胡不计分)</span>' : (refunded ? ' <span style="color:var(--text-muted);font-size:12px;">(退税仅保留已胡牌玩家)</span>' : '');
+    const victimNames = tx.victims.map(v => getPlayerName(v)).join('+');
+    const displayScore = isZhahu ? score * effectiveVictims.length : score * tx.victims.length;
+    const note = isZhahu && effectiveVictims.length === 0 ? ' <span style="color:var(--text-muted);font-size:12px;">(诈胡不计分)</span>' : (isZhahu ? ' <span style="color:var(--text-muted);font-size:12px;">(诈胡：仅已胡牌玩家计分)</span>' : '');
     html += `<div class="gang-entry" data-tx-id="${tx._id}">
       <span>${tx.gangType}${typeCount[tx.gangType]}=${victimNames}=${displayScore}${note}</span>
       <button class="close" data-del="${tx._id}">✕</button>
@@ -3350,8 +3395,11 @@ function performLijuChajiao(silent) {
   const liujuResult = {};
   for (let i = 0; i < 4; i++) liujuResult[i] = { gains: [], losses: [] };
 
-  // 退税通过 getEffectiveGangVictims 动态应用（不再修改state清空杠事务）
-  // 退税规则：花猪不退税；相公/诈胡/未听牌的杠只对已胡牌玩家计分
+  // 退税：对未听牌玩家物理清杠（删除涉及未胡牌玩家的杠，保留涉及已胡牌玩家的杠且清空未胡牌玩家）
+  // 相公/诈胡的杠在身份确认时已物理清空，此处不重复处理
+  for (const player of payingPlayers) {
+    refundGangTransactions(player.id);
+  }
 
   // ===== 罚款：未听牌赔付获赔玩家（1248翻倍法） =====
   for (const player of payingPlayers) {
