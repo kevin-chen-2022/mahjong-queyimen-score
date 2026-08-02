@@ -501,14 +501,18 @@
   }
   .setting-row {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 8px 0; border-bottom: 1px solid var(--border);
+    gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border);
   }
   .setting-row:last-child { border-bottom: none; }
-  .setting-row label { font-size: 13px; }
+  .setting-row label { font-size: 13px; margin-right: auto; }
   .setting-row input, .setting-row select {
     padding: 4px 8px; border: 1px solid var(--border);
     background: var(--input-bg); border-radius: 6px;
     color: var(--text); font-size: 13px; width: 80px; text-align: center;
+  }
+  .setting-row .unit-label {
+    font-size: 12px; color: var(--text-secondary);
+    margin-left: 0; white-space: nowrap;
   }
   .setting-row .delete-btn {
     width: 20px; height: 20px; border-radius: 50%;
@@ -681,6 +685,7 @@
       <div class="setting-row">
         <label>起始资产</label>
         <input type="number" id="playerAsset" min="0" value="100" title="每位玩家一开始的分数">
+        <span class="unit-label">分</span>
       </div>
     </div>
 
@@ -689,30 +694,35 @@
       <div class="setting-row">
         <label>底分</label>
         <input type="number" id="baseScore" min="1" max="10">
+        <span class="unit-label">分</span>
       </div>
       <div class="setting-row">
         <label>封顶</label>
         <select id="capLimit">
           <option value="0">不封顶</option>
-          <option value="8">8分</option>
-          <option value="10">10分</option>
-          <option value="12">12分</option>
-          <option value="14">14分</option>
-          <option value="16">16分</option>
+          <option value="4">4番</option>
+          <option value="6">6番</option>
+          <option value="8">8番</option>
+          <option value="10">10番</option>
         </select>
       </div>
     </div>
 
-    <div class="settings-section" id="multiplierSettings">
-      <h3>加番</h3>
-      <div id="multiplierList" class="settings-list"></div>
-      <button class="add-btn" id="addMultiplier">+ 添加玩法</button>
-    </div>
-
     <div class="settings-section" id="handtypeSettings">
-      <h3>牌型</h3>
+      <h3>基础主番（ 牌型）：不叠加</h3>
       <div id="handtypeList" class="settings-list"></div>
       <button class="add-btn" id="addHandtype">+ 添加牌型</button>
+    </div>
+
+    <div class="settings-section" id="multiplierSettings">
+      <h3>附加番：可叠加（上限封顶）</h3>
+      <div id="multiplierList" class="settings-list"></div>
+      <button class="add-btn" id="addMultiplier">+ 添加附加番</button>
+    </div>
+
+    <div class="settings-section" id="gangSettings">
+      <h3>刮风下雨（独立结算）</h3>
+      <div id="gangList" class="settings-list"></div>
     </div>
   </div>
 </div>
@@ -806,7 +816,7 @@
                 <li>四个玩家方框按胡牌顺序排列，可拖拽手柄调整位置。</li>
                 <li>长按方框右侧详情区域，弹出"得分信息输入卡片"。</li>
                 <li>输入卡片分"刮风下雨"和"胡牌信息"两栏，实时计算得分。</li>
-                <li>刮风下雨：暗杠、点杠（单选被点玩家）、粘杠，选择后生成条目。</li>
+                <li>刮风下雨：暗杠、点杠（单选被点玩家）、巴杠，选择后生成条目。</li>
                 <li>胡牌信息：先选牌型，再选胡牌方式（被点胡/自摸/诈胡）。</li>
                 <li>"花猪"和"未听牌"会隐藏后续选项；花猪/相公/诈胡只赔付获赔玩家（可胡牌牌型且胡牌方式为"未胡牌"）。</li>
                 <li>退税规则：花猪/相公不退税（可继续开杠收钱）；诈胡/未听牌(流局查叫后)的杠若涉及已胡牌玩家则仅保留已胡牌玩家，否则清空。</li>
@@ -843,7 +853,8 @@
             <div class="accordion-body-inner">
               <ul>
                 <li>基本设置：底分（默认1）、封顶（默认8分）、玩家资产（默认100）。</li>
-                <li>加番：自摸、暗杠、点杠、粘杠等玩法的番数，可增删改和拖动排序。</li>
+                <li>附加番：自摸、杠上花、杠上炮等玩法的番数，可增删改和拖动排序。</li>
+                <li>刮风下雨（独立结算）：暗杠、点杠、巴杠的番数，可增删改和拖动排序。</li>
                 <li>牌型：平胡、大对子等牌型的番数，可增删改和拖动排序。</li>
                 <li>点击"编辑"进入编辑模式，可修改名称、番数、排序和删除。</li>
                 <li>牌型设置实时同步到计分页面的牌型按钮。</li>
@@ -871,30 +882,34 @@ const defaultState = {
   currentTab: 'scoring',
   settings: {
     baseScore: 1,
-    capLimit: 8,
+    capLimit: 4,
     playerAsset: 100,
     multipliers: [
       { key: 'zimo', name: '自摸', value: 1 },
-      { key: 'angang', name: '暗杠', value: 2 },
-      { key: 'diangang', name: '点杠', value: 2 },
-      { key: 'niangang', name: '粘杠', value: 1 },
+      { key: 'suangen', name: '根', value: 1 },
       { key: 'gangshanghua', name: '杠上花', value: 1 },
       { key: 'gangshangpao', name: '杠上炮', value: 1 },
       { key: 'qiangganghu', name: '抢杠胡', value: 1 },
       { key: 'jinjudiao', name: '金钩钓', value: 1 },
       { key: 'jingoupao', name: '金钩炮', value: 1 },
       { key: 'haidilao', name: '海底捞', value: 1 },
-      { key: 'suangen', name: '算分根', value: 1 },
+    ],
+    gangs: [
+      { key: 'angang', name: '暗杠', value: 2 },
+      { key: 'diangang', name: '点杠', value: 2 },
+      { key: 'niangang', name: '巴杠', value: 1 },
     ],
     handTypes: [
       { name: '平胡', value: 1 },
       { name: '大对子', value: 2 },
-      { name: '清一色', value: 4 },
-      { name: '清大对', value: 8 },
-      { name: '七个对', value: 4 },
-      { name: '龙七对', value: 8 },
-      { name: '清七对', value: 8 },
-      { name: '清龙七对', value: 10 },
+      { name: '清一色', value: 3 },
+      { name: '全带幺', value: 3 },
+      { name: '七个对', value: 3 },
+      { name: '清大对', value: 4 },
+      { name: '龙七对', value: 4 },
+      { name: '将对', value: 4 },
+      { name: '清七对', value: 4 },
+      { name: '清龙七对', value: 4 },
     ],
     editing: false,
   },
@@ -926,6 +941,24 @@ function loadState() {
           settings.multipliers.push({ ...dm });
         }
       }
+      // Ensure handTypes array contains all default names; append any missing ones
+      const defaultHand = defaultState.settings.handTypes;
+      const existingHandNames = new Set((settings.handTypes || []).map(h => h.name));
+      for (const dh of defaultHand) {
+        if (!existingHandNames.has(dh.name)) {
+          settings.handTypes = settings.handTypes || [];
+          settings.handTypes.push({ ...dh });
+        }
+      }
+      // Ensure gangs array contains all default keys; append any missing ones
+      const defaultGangs = defaultState.settings.gangs;
+      const existingGangKeys = new Set((settings.gangs || []).map(g => g.key));
+      for (const dg of defaultGangs) {
+        if (!existingGangKeys.has(dg.key)) {
+          settings.gangs = settings.gangs || [];
+          settings.gangs.push({ ...dg });
+        }
+      }
       // One-time migration: move qiangganghu to right after gangshangpao (fix old data order)
       const migrateFlag = 'mg_v1_qiangganghu';
       if (!parsed._migrations || !parsed._migrations.includes(migrateFlag)) {
@@ -940,6 +973,119 @@ function loadState() {
         }
         parsed._migrations = (parsed._migrations || []).concat(migrateFlag);
       }
+      // One-time migration v2: split gang items (angang/diangang/niangang) out of multipliers into gangs array, rename 粘杠→巴杠
+      const migrateFlag2 = 'mg_v2_gangs_split';
+      if (!parsed._migrations || !parsed._migrations.includes(migrateFlag2)) {
+        const gangKeys = new Set(['angang', 'diangang', 'niangang']);
+        if (Array.isArray(settings.multipliers)) {
+          // Collect gang items currently in multipliers (preserve user-customized values)
+          const moved = settings.multipliers.filter(m => gangKeys.has(m.key));
+          settings.multipliers = settings.multipliers.filter(m => !gangKeys.has(m.key));
+          // Rebuild gangs from default (applies 巴杠 naming), override values from moved items
+          settings.gangs = JSON.parse(JSON.stringify(defaultState.settings.gangs));
+          for (const mv of moved) {
+            const target = settings.gangs.find(g => g.key === mv.key);
+            if (target) target.value = mv.value;
+          }
+        }
+        // Ensure gangs contains all default keys
+        settings.gangs = settings.gangs || [];
+        const existingGangKeys = new Set(settings.gangs.map(g => g.key));
+        for (const dg of defaultState.settings.gangs) {
+          if (!existingGangKeys.has(dg.key)) settings.gangs.push({ ...dg });
+        }
+        // Normalize existing in-progress transactions: rename gangType 粘杠→巴杠
+        if (Array.isArray(parsed.players)) {
+          for (const p of parsed.players) {
+            if (Array.isArray(p.transactions)) {
+              for (const tx of p.transactions) {
+                if (tx && tx.gangType === '粘杠') tx.gangType = '巴杠';
+              }
+            }
+          }
+        }
+        parsed._migrations = (parsed._migrations || []).concat(migrateFlag2);
+      }
+      // One-time migration v3: remove 金钩炮 (jingoupao), rename 算分根 display → 根, move suangen to last
+      const migrateFlag3 = 'mg_v3_mult_cleanup';
+      if (!parsed._migrations || !parsed._migrations.includes(migrateFlag3)) {
+        if (Array.isArray(settings.multipliers)) {
+          // Remove jingoupao entry
+          settings.multipliers = settings.multipliers.filter(m => m.key !== 'jingoupao');
+          // Rename suangen display name
+          const sg = settings.multipliers.find(m => m.key === 'suangen');
+          if (sg) sg.name = '根';
+          // Move suangen to last
+          const sgIdx = settings.multipliers.findIndex(m => m.key === 'suangen');
+          if (sgIdx !== -1 && sgIdx !== settings.multipliers.length - 1) {
+            const [sgItem] = settings.multipliers.splice(sgIdx, 1);
+            settings.multipliers.push(sgItem);
+          }
+          // Also normalize any gang values that may have been 2 from old default → 1 only if user has not customized (keep if != 2 from saved)
+          // Actually preserve user customized values; just ensure suangen/jingoupao cleanup above.
+        }
+        parsed._migrations = (parsed._migrations || []).concat(migrateFlag3);
+      }
+      // One-time migration v4: reorder handTypes (七个对 after 全带幺) and multipliers (根/suangen after 自摸/zimo)
+      const migrateFlag4 = 'mg_v4_reorder';
+      if (!parsed._migrations || !parsed._migrations.includes(migrateFlag4)) {
+        if (Array.isArray(settings.handTypes)) {
+          const idx7 = settings.handTypes.findIndex(h => h.name === '七个对');
+          const idxQ = settings.handTypes.findIndex(h => h.name === '全带幺');
+          if (idx7 !== -1 && idxQ !== -1 && idx7 !== idxQ + 1) {
+            const [item7] = settings.handTypes.splice(idx7, 1);
+            const newIdxQ = settings.handTypes.findIndex(h => h.name === '全带幺');
+            settings.handTypes.splice(newIdxQ + 1, 0, item7);
+          }
+        }
+        if (Array.isArray(settings.multipliers)) {
+          const idxSg = settings.multipliers.findIndex(m => m.key === 'suangen');
+          const idxZ = settings.multipliers.findIndex(m => m.key === 'zimo');
+          if (idxSg !== -1 && idxZ !== -1 && idxSg !== idxZ + 1) {
+            const [sg] = settings.multipliers.splice(idxSg, 1);
+            const newIdxZ = settings.multipliers.findIndex(m => m.key === 'zimo');
+            settings.multipliers.splice(newIdxZ + 1, 0, sg);
+          }
+        }
+        parsed._migrations = (parsed._migrations || []).concat(migrateFlag4);
+      }
+      // One-time migration v5: restore 金钩炮 (jingoupao) after 金钩钓 (jinjudiao) — was removed in v3
+      const migrateFlag5 = 'mg_v5_restore_jingoupao';
+      if (!parsed._migrations || !parsed._migrations.includes(migrateFlag5)) {
+        if (Array.isArray(settings.multipliers)) {
+          let jp = settings.multipliers.find(m => m.key === 'jingoupao');
+          if (!jp) {
+            jp = { key: 'jingoupao', name: '金钩炮', value: 1 };
+            const idxJjd = settings.multipliers.findIndex(m => m.key === 'jinjudiao');
+            if (idxJjd !== -1) {
+              settings.multipliers.splice(idxJjd + 1, 0, jp);
+            } else {
+              settings.multipliers.push(jp);
+            }
+          } else {
+            // Ensure correct position (right after jinjudiao)
+            const jpIdx = settings.multipliers.findIndex(m => m.key === 'jingoupao');
+            const jjdIdx = settings.multipliers.findIndex(m => m.key === 'jinjudiao');
+            if (jjdIdx !== -1 && jpIdx !== jjdIdx + 1) {
+              const [item] = settings.multipliers.splice(jpIdx, 1);
+              const newJjdIdx = settings.multipliers.findIndex(m => m.key === 'jinjudiao');
+              settings.multipliers.splice(newJjdIdx + 1, 0, item);
+            }
+          }
+        }
+        parsed._migrations = (parsed._migrations || []).concat(migrateFlag5);
+      }
+      // One-time migration v6: restore angang/diangang value to 2 (1248标准：暗杠/点杠=2分/家)
+      const migrateFlag6 = 'mg_v6_gang_value_2';
+      if (!parsed._migrations || !parsed._migrations.includes(migrateFlag6)) {
+        if (Array.isArray(settings.gangs)) {
+          const ag = settings.gangs.find(g => g.key === 'angang');
+          if (ag && ag.value === 1) ag.value = 2;
+          const dg = settings.gangs.find(g => g.key === 'diangang');
+          if (dg && dg.value === 1) dg.value = 2;
+        }
+        parsed._migrations = (parsed._migrations || []).concat(migrateFlag6);
+      }
       // Ensure new top-level settings flags exist
       return { ...defaultState, ...parsed, settings };
     }
@@ -953,9 +1099,18 @@ function saveState() {
 }
 
 // ============ Scoring Logic ============
+const SUP_DIGITS = ['⁰','¹','²','³','⁴','⁵','⁶','⁷','⁸','⁹','¹⁰','¹¹','¹²','¹³','¹⁴','¹⁵','¹⁶'];
+function supDigit(n) {
+  if (n == null || isNaN(n)) return '';
+  if (n >= 0 && n < SUP_DIGITS.length) return SUP_DIGITS[n];
+  return `^${n}`;
+}
+
 function getMultiplier(key) {
   const m = state.settings.multipliers.find(m => m.key === key);
-  return m ? m.value : 0;
+  if (m) return m.value;
+  const g = (state.settings.gangs || []).find(g => g.key === key);
+  return g ? g.value : 0;
 }
 
 function getHandTypeValue(name) {
@@ -964,20 +1119,19 @@ function getHandTypeValue(name) {
 }
 
 function calcGangScore(multiplierKey) {
+  // 刮风下雨独立结算，不受封顶番数影响（capLimit 是番数封顶，不限制杠分)
   const base = state.settings.baseScore;
-  const cap = state.settings.capLimit;
   const val = getMultiplier(multiplierKey);
-  const score = base * val;
-  if (cap > 0 && score > cap) return cap;
-  return score;
+  return base * val;
 }
 
 function calcHuScorePerLoser(player) {
   // player is the transaction with hu info
+  // 1248翻倍法：倍数 = 2^(有效番-1)，封顶限制番数而非分数
   const base = state.settings.baseScore;
   const cap = state.settings.capLimit;
   let total = getHandTypeValue(player.handType) || 0;
-  
+
   if (player.winType === '自摸') {
     total += getMultiplier('zimo');
     if (player.zimoType === '金钩钓') total += getMultiplier('jinjudiao');
@@ -991,10 +1145,13 @@ function calcHuScorePerLoser(player) {
   if (player.suangenCount > 0) {
     total += getMultiplier('suangen') * player.suangenCount;
   }
-  
-  const score = base * total;
-  if (cap > 0 && score > cap) return cap;
-  return score;
+
+  if (total <= 0) return 0;
+  // 有效番 = min(总番, 封顶)；不封顶时直接用总番
+  const effFan = (cap > 0) ? Math.min(total, cap) : total;
+  // 1248: 1番=1倍(2^0), 2番=2倍(2^1), 3番=4倍(2^2), 4番=8倍(2^3)...
+  const multiplier = Math.pow(2, effFan - 1);
+  return base * multiplier;
 }
 
 // 判断某玩家是否为诈胡（诈胡玩家只输不赢，不获赔付）
@@ -1047,8 +1204,11 @@ function getEffectiveGangVictims(playerId, tx) {
 
 function calcNetScore() {
   const scores = [0, 0, 0, 0];
+  const base = state.settings.baseScore;
   const cap = state.settings.capLimit;
-  const penalty = cap > 0 ? cap : 8;
+  // 1248翻倍法：penalty = 底分 × 2^(封顶番-1)，不封顶则按8番(2^7)算
+  const effCap = cap > 0 ? cap : 8;
+  const penalty = base * Math.pow(2, effCap - 1);
 
   for (const player of state.players) {
     // If player has manual score, use that instead
@@ -1119,11 +1279,14 @@ function calcPlayerDetails(playerId) {
   const player = state.players.find(p => p.id === playerId);
   if (!player) return result;
 
+  const base = state.settings.baseScore;
   const cap = state.settings.capLimit;
-  const penalty = cap > 0 ? cap : 8;
+  // 1248翻倍法：penalty = 底分 × 2^(封顶番-1)
+  const effCap = cap > 0 ? cap : 8;
+  const penalty = base * Math.pow(2, effCap - 1);
 
   // ===== 刮风下雨 - 得分 =====
-  const gangCount = { '暗杠': 0, '点杠': 0, '粘杠': 0 };
+  const gangCount = { '暗杠': 0, '点杠': 0, '巴杠': 0 };
   for (const tx of player.transactions) {
     if (tx.type === 'gang') {
       gangCount[tx.gangType] = (gangCount[tx.gangType] || 0) + 1;
@@ -1147,7 +1310,7 @@ function calcPlayerDetails(playerId) {
   // ===== 刮风下雨 - 扣分 =====
   for (const actor of state.players) {
     if (actor.id === playerId) continue;
-    const actorGangCount = { '暗杠': 0, '点杠': 0, '粘杠': 0 };
+    const actorGangCount = { '暗杠': 0, '点杠': 0, '巴杠': 0 };
     for (const tx of actor.transactions) {
       if (tx.type === 'gang') {
         actorGangCount[tx.gangType] = (actorGangCount[tx.gangType] || 0) + 1;
@@ -1175,8 +1338,10 @@ function calcPlayerDetails(playerId) {
 
     const baseScore = calcHuScorePerLoser(tx);
     const handVal = getHandTypeValue(tx.handType);
+    const base = state.settings.baseScore;
+    const cap = state.settings.capLimit;
 
-    // 第一行：胡牌基础分（加法表达式）
+    // 1248明細：番数累加 → 有效番(封顶) → 倍数(2^(n-1)) → 单家分 → 总分
     const parts = [`${handVal}（${tx.handType}）`];
     if (tx.winType === '自摸') {
       const zimoFan = getMultiplier('zimo');
@@ -1196,9 +1361,30 @@ function calcPlayerDetails(playerId) {
       const sgFan = getMultiplier('suangen') * tx.suangenCount;
       parts.push(`${sgFan}（根）`);
     }
-    const line1 = `胡牌基础分：${parts.join('+')}=${baseScore}分`;
+    // 计算总番和有效番
+    let totalFan = handVal;
+    if (tx.winType === '自摸') {
+      totalFan += getMultiplier('zimo');
+      if (tx.zimoType === '金钩钓') totalFan += getMultiplier('jinjudiao');
+      if (tx.zimoType === '海底捞') totalFan += getMultiplier('haidilao');
+      if (tx.zimoType === '杠上花') totalFan += getMultiplier('gangshanghua');
+    } else {
+      const dpFan = tx.dianpaoType === '金钩炮' ? getMultiplier('jingoupao') :
+                   tx.dianpaoType === '杠上炮' ? getMultiplier('gangshangpao') :
+                   tx.dianpaoType === '抢杠胡' ? getMultiplier('qiangganghu') : 0;
+      totalFan += dpFan;
+    }
+    if (tx.suangenCount > 0) totalFan += getMultiplier('suangen') * tx.suangenCount;
 
-    // 第二行：胡牌总分
+    const effFan = (cap > 0) ? Math.min(totalFan, cap) : totalFan;
+    const mult = totalFan > 0 ? Math.pow(2, effFan - 1) : 0;
+    const cappedNote = (cap > 0 && totalFan > cap) ? `→ 封顶${cap}番` : '';
+    const supDigits = ['⁰','¹','²','³','⁴','⁵','⁶','⁷','⁸','⁹','¹⁰','¹¹','¹²'];
+    const expStr = effFan > 0 && effFan < supDigits.length ? supDigits[effFan - 1] : (effFan - 1);
+    const line1 = `胡牌番数：${parts.join('+')}=${totalFan}番${cappedNote}`;
+    const line2 = `倍数：2${expStr}=${mult}倍`;
+    const line3 = `单家分：${base}分×${mult}倍=${baseScore}分`;
+
     let totalCount, totalScore;
     if (tx.winType === '自摸') {
       totalCount = tx.zimoPlayers.length;
@@ -1206,9 +1392,9 @@ function calcPlayerDetails(playerId) {
       totalCount = 1;
     }
     totalScore = baseScore * totalCount;
-    const line2 = `胡牌总分：${baseScore}分×${totalCount}家=${totalScore}分`;
+    const line4 = `胡牌总分：${baseScore}分×${totalCount}家=${totalScore}分`;
 
-    result.hu.gains.push({ label: line1 + '<br>' + line2, score: totalScore });
+    result.hu.gains.push({ label: line1 + '<br>' + line2 + '<br>' + line3 + '<br>' + line4, score: totalScore });
   }
 
   // ===== 胡牌信息 - 扣分（被自摸/点炮/诈胡赔付） =====
@@ -2243,7 +2429,7 @@ function renderInputModal() {
       <div class="gang-buttons">
         <button class="gang-btn ${inputModalState.activeGangType === '暗杠' ? 'active' : ''}" data-gang="暗杠">暗杠</button>
         <button class="gang-btn ${inputModalState.activeGangType === '点杠' ? 'active' : ''}" data-gang="点杠">点杠</button>
-        <button class="gang-btn ${inputModalState.activeGangType === '粘杠' ? 'active' : ''}" data-gang="粘杠">粘杠</button>
+        <button class="gang-btn ${inputModalState.activeGangType === '巴杠' ? 'active' : ''}" data-gang="巴杠">巴杠</button>
       </div>
       <div id="gangArea"></div>
     </div>
@@ -2341,7 +2527,7 @@ function updateHuScorePreview() {
   const d = inputModalState.huInfo;
   const preview = document.getElementById('huScorePreview');
   if (!preview) return;
-  
+
   if (!d.handType) {
     preview.textContent = '请选择牌型';
     preview.style.color = 'var(--text-secondary)';
@@ -2353,47 +2539,91 @@ function updateHuScorePreview() {
     preview.style.color = 'var(--text-secondary)';
     return;
   }
-  
+
+  const base = state.settings.baseScore;
+  const cap = state.settings.capLimit;
+
+  // ===== 胡牌分（1248翻倍） =====
   const handVal = getHandTypeValue(d.handType) || 0;
-  let total = handVal;
+  let totalFan = handVal;
   const parts = [`${handVal}（${d.handType}）`];
 
   if (d.winType === '自摸') {
     const zimoFan = getMultiplier('zimo');
-    total += zimoFan;
+    totalFan += zimoFan;
     parts.push(`${zimoFan}（自摸）`);
     const zimoExtraFan = d.zimoType === '金钩钓' ? getMultiplier('jinjudiao') :
                         d.zimoType === '海底捞' ? getMultiplier('haidilao') :
                         d.zimoType === '杠上花' ? getMultiplier('gangshanghua') : 0;
-    total += zimoExtraFan;
+    totalFan += zimoExtraFan;
     if (zimoExtraFan > 0) parts.push(`${zimoExtraFan}（${d.zimoType}）`);
   } else {
-    // 被点胡
     parts.push(`0（被点胡）`);
     const dpFan = d.dianpaoType === '金钩炮' ? getMultiplier('jingoupao') :
                  d.dianpaoType === '杠上炮' ? getMultiplier('gangshangpao') :
                  d.dianpaoType === '抢杠胡' ? getMultiplier('qiangganghu') : 0;
-    total += dpFan;
+    totalFan += dpFan;
     if (dpFan > 0) parts.push(`${dpFan}（${d.dianpaoType}）`);
   }
-
-  // 算分根
   if (d.suangenCount > 0) {
     const sgFan = getMultiplier('suangen') * d.suangenCount;
-    total += sgFan;
+    totalFan += sgFan;
     parts.push(`${sgFan}（根）`);
   }
 
-  const base = state.settings.baseScore;
-  const cap = state.settings.capLimit;
-  let score = base * total;
-  if (cap > 0 && score > cap) score = cap;
+  // 1248: 有效番 = min(总番, 封顶)，倍数 = 2^(有效番-1)
+  const effFan = (cap > 0) ? Math.min(totalFan, cap) : totalFan;
+  const mult = totalFan > 0 ? Math.pow(2, effFan - 1) : 0;
+  const perLoser = base * mult;  // 单家分
+  const cappedNote = (cap > 0 && totalFan > cap) ? `→ 封顶${cap}番` : '';
+  const supDigits = ['⁰','¹','²','³','⁴','⁵','⁶','⁷','⁸','⁹','¹⁰','¹¹','¹²'];
+  const expStr = effFan > 0 && effFan <= supDigits.length ? supDigits[effFan - 1] : (effFan - 1);
 
-  const count = d.winType === '自摸' ? d.zimoPlayers.length : 1;
-  const totalScore = score * count;
+  const huCount = d.winType === '自摸' ? d.zimoPlayers.length : 1;
+  const huTotal = perLoser * huCount;
 
-  preview.innerHTML = `胡牌基础分：${parts.join('+')}=<strong>${score}分</strong><br>胡牌总分：<strong>${score}分</strong>×${count}家=<strong style="font-size:16px;color:${totalScore >= 0 ? 'var(--green)' : 'var(--red)'}">${totalScore}分</strong>`;
+  // ===== 杠分（独立结算） =====
+  const player = state.players.find(p => p.id === inputModalState.playerId);
+  const isZhahu = isZhahuPlayer(player.id);
+  let gangTotal = 0;
+  const gangLines = [];
+  for (const tx of player.transactions) {
+    if (tx.type !== 'gang') continue;
+    const effVictims = getEffectiveGangVictims(player.id, tx);
+    if (effVictims.length === 0) continue;
+    const gScore = calcGangScore(tx.multiplierKey);
+    const gFan = getMultiplier(tx.multiplierKey);
+    const gCount = effVictims.length;
+    const gTotal = isZhahu ? 0 : gScore * gCount;
+    gangTotal += gTotal;
+    const note = isZhahu ? '（诈胡不计分）' : (needsTaxRefund(player.id) ? '（退税）' : '');
+    gangLines.push(`${tx.gangType}（${gFan}分）×${gCount}家=${gTotal}${note}`);
+  }
+
+  const grandTotal = huTotal + gangTotal;
+  const color = grandTotal >= 0 ? 'var(--green)' : 'var(--red)';
+
+  let html = '';
+  html += `<div style="border-bottom:1px solid var(--border);padding-bottom:6px;margin-bottom:6px;">`;
+  html += `<div>胡牌番数：${parts.join('+')}=${totalFan}番${cappedNote}</div>`;
+  html += `<div>倍数：2${expStr}=${mult}倍</div>`;
+  html += `<div>单家分：${base}分×${mult}倍=<strong>${perLoser}分</strong></div>`;
+  html += `<div>胡牌总分：${perLoser}分×${huCount}家=<strong>${huTotal}分</strong></div>`;
+  html += `</div>`;
+
+  if (gangLines.length > 0) {
+    html += `<div style="border-bottom:1px solid var(--border);padding-bottom:6px;margin-bottom:6px;">`;
+    html += `<div style="font-weight:600;">刮风下雨（独立结算）</div>`;
+    for (const gl of gangLines) html += `<div>${gl}</div>`;
+    html += `<div>杠合计：<strong>${gangTotal}分</strong></div>`;
+    html += `</div>`;
+  }
+
+  html += `<div style="font-size:15px;">本局合计：<strong style="font-size:18px;color:${color}">${grandTotal}分</strong></div>`;
+
+  preview.innerHTML = html;
   preview.style.color = 'var(--text)';
+  preview.style.textAlign = 'left';
 }
 
 function renderGangArea() {
@@ -2476,7 +2706,7 @@ function showGangSelector(gangType) {
     b.classList.toggle('active', b.dataset.gang === gangType);
   });
   
-  const isMulti = gangType === '暗杠' || gangType === '粘杠'; // 暗杠、粘杠为多选
+  const isMulti = gangType === '暗杠' || gangType === '巴杠'; // 暗杠、巴杠为多选
   const key = gangType === '暗杠' ? 'angang' : gangType === '点杠' ? 'diangang' : 'niangang';
   
   // Show selector inline
@@ -2909,6 +3139,28 @@ function renderSettings() {
   document.getElementById('capLimit').disabled = !s.editing;
   document.getElementById('playerAsset').value = s.playerAsset;
   document.getElementById('playerAsset').disabled = !s.editing;
+  // capLimit change event
+  document.getElementById('capLimit').onchange = (e) => {
+    s.capLimit = parseInt(e.target.value) || 0;
+    saveState();
+    renderPlayers();
+  };
+  // baseScore change event
+  document.getElementById('baseScore').onchange = (e) => {
+    const v = Math.max(1, Math.min(10, parseInt(e.target.value) || 1));
+    e.target.value = v;
+    s.baseScore = v;
+    saveState();
+    renderPlayers();
+  };
+  // playerAsset change event
+  document.getElementById('playerAsset').onchange = (e) => {
+    const v = Math.max(0, parseInt(e.target.value) || 0);
+    e.target.value = v;
+    s.playerAsset = v;
+    saveState();
+    renderPlayers();
+  };
 
   // Render multipliers
   const mList = document.getElementById('multiplierList');
@@ -2918,6 +3170,7 @@ function renderSettings() {
       <label>${escapeHtml(m.name)}</label>
       <input type="text" class="name-edit" value="${escapeHtml(m.name)}" data-field="name" maxlength="12" placeholder="名称">
       <input type="number" value="${m.value}" data-field="value" ${s.editing ? '' : 'disabled'}>
+      <span class="unit-label">番</span>
       <button class="delete-btn" data-del="${i}">✕</button>
     </div>
   `).join('');
@@ -2930,13 +3183,29 @@ function renderSettings() {
       <label>${escapeHtml(h.name)}</label>
       <input type="text" class="name-edit" value="${escapeHtml(h.name)}" data-field="name" maxlength="12" placeholder="名称">
       <input type="number" value="${h.value}" data-field="value" ${s.editing ? '' : 'disabled'}>
+      <span class="unit-label">番</span>
       <button class="delete-btn" data-del="${i}">✕</button>
+    </div>
+  `).join('');
+
+  // Render gangs (刮风下雨) — built-in keys (angang/diangang/niangang) have no delete button
+  const builtInGangKeys = new Set(['angang', 'diangang', 'niangang']);
+  const gList = document.getElementById('gangList');
+  gList.innerHTML = (s.gangs || []).map((g, i) => `
+    <div class="setting-row" data-type="gang" data-idx="${i}">
+      <div class="row-drag" data-action="row-drag" title="拖动排序"><span></span></div>
+      <label>${escapeHtml(g.name)}</label>
+      <input type="text" class="name-edit" value="${escapeHtml(g.name)}" data-field="name" maxlength="12" placeholder="名称">
+      <input type="number" value="${g.value}" data-field="value" ${s.editing ? '' : 'disabled'}>
+      <span class="unit-label">倍</span>
+      ${builtInGangKeys.has(g.key) ? '' : `<button class="delete-btn" data-del="${i}">✕</button>`}
     </div>
   `).join('');
 
   // Editing mode (add-btn visibility handled by CSS)
   document.getElementById('multiplierSettings').classList.toggle('editing', s.editing);
   document.getElementById('handtypeSettings').classList.toggle('editing', s.editing);
+  document.getElementById('gangSettings').classList.toggle('editing', s.editing);
 
   const editBtn = document.getElementById('editToggle');
   editBtn.textContent = s.editing ? '🔒 锁定' : '✏️ 编辑';
@@ -3002,10 +3271,41 @@ function renderSettings() {
     }
   });
 
+  // Bind inputs for gangs (刮风下雨)
+  gList.querySelectorAll('.setting-row').forEach(row => {
+    const idx = parseInt(row.dataset.idx);
+    const nameInput = row.querySelector('input[data-field="name"]');
+    const valueInput = row.querySelector('input[data-field="value"]');
+    if (nameInput) {
+      nameInput.onchange = () => {
+        const v = nameInput.value.trim();
+        if (!v) { nameInput.value = state.settings.gangs[idx].name; return; }
+        state.settings.gangs[idx].name = v;
+        saveState();
+        renderSettings();
+        renderInputModal();
+      };
+    }
+    valueInput.onchange = () => {
+      state.settings.gangs[idx].value = parseFloat(valueInput.value) || 0;
+      saveState();
+    };
+    const delBtn = row.querySelector('.delete-btn');
+    if (delBtn) {
+      delBtn.onclick = () => {
+        state.settings.gangs.splice(idx, 1);
+        saveState();
+        renderSettings();
+        renderInputModal();
+      };
+    }
+  });
+
   // Bind drag for setting rows (only in editing mode)
   if (s.editing) {
     bindSettingRowDrag(mList, 'multipliers');
     bindSettingRowDrag(hList, 'handTypes');
+    bindSettingRowDrag(gList, 'gangs');
   }
 }
 
@@ -3037,23 +3337,26 @@ function performLijuChajiao(silent) {
   // 退税通过 getEffectiveGangVictims 动态应用（不再修改state清空杠事务）
   // 退税规则：花猪不退税；相公/诈胡/未听牌的杠只对已胡牌玩家计分
 
-  // ===== 罚款：未听牌赔付获赔玩家 =====
+  // ===== 罚款：未听牌赔付获赔玩家（1248翻倍法） =====
   for (const player of payingPlayers) {
     const payDetails = [];
     let totalPay = 0;
     for (const tingPlayer of tingPlayers) {
       const huTx = tingPlayer.transactions.find(t => t.type === 'hu');
-      // 胡牌满分 = 牌型 + 自摸 + 算分根数量
+      // 胡牌满分 = 牌型 + 自摸 + 算分根数量（按1248翻倍法计算最大单家分）
       const handVal = getHandTypeValue(huTx.handType);
       const zimoFan = getMultiplier('zimo');
       const sgFan = huTx.suangenCount > 0 ? getMultiplier('suangen') * huTx.suangenCount : 0;
-      let maxScore = base * (handVal + zimoFan + sgFan);
-      if (cap > 0 && maxScore > cap) maxScore = cap;
-      payDetails.push(`${getPlayerName(tingPlayer.id)}（${maxScore}分）`);
+      const totalFan = handVal + zimoFan + sgFan;
+      const effFan = (cap > 0) ? Math.min(totalFan, cap) : totalFan;
+      const mult = totalFan > 0 ? Math.pow(2, effFan - 1) : 0;
+      const maxScore = base * mult;
+      const cappedNote = (cap > 0 && totalFan > cap) ? `，封顶${cap}番` : '';
+      payDetails.push(`${getPlayerName(tingPlayer.id)}（${totalFan}番${cappedNote}=${maxScore}分）`);
       totalPay += maxScore;
       // 给获赔玩家添加获赔付
       liujuResult[tingPlayer.id].gains.push({
-        label: `流局因${getPlayerName(player.id)}未听牌而获赔付。<br>赔付分数：${maxScore}分。`,
+        label: `流局因${getPlayerName(player.id)}未听牌而获赔付。<br>番数：${handVal}（${huTx.handType}）+${zimoFan}（自摸）+${sgFan}（根）=${totalFan}番${cappedNote}。<br>赔付分数：${base}分×2${supDigit(effFan-1)}=${mult}倍→${maxScore}分。`,
         score: maxScore
       });
     }
@@ -3336,6 +3639,7 @@ function init() {
       renderSettings();
     });
   });
+  // (addGang button removed — no longer allowed to add custom 刮风下雨 entries)
   
   // Setup interactions
   setupPlayerInteractions();
